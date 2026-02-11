@@ -1,0 +1,52 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./**/*.{js,ts,jsx,tsx}",
+  ],
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        // Dynamic Primary Color via CSS Variable
+        primary: {
+          DEFAULT: 'rgb(var(--primary) / <alpha-value>)',
+          50: 'rgb(var(--primary) / 0.05)',
+          100: 'rgb(var(--primary) / 0.1)',
+          200: 'rgb(var(--primary) / 0.2)',
+          300: 'rgb(var(--primary) / 0.3)',
+          400: 'rgb(var(--primary) / 0.4)',
+          500: 'rgb(var(--primary) / 1)',
+          600: 'rgb(var(--primary) / 0.9)',
+          700: 'rgb(var(--primary) / 0.8)',
+          800: 'rgb(var(--primary) / 0.7)',
+          900: 'rgb(var(--primary) / 0.6)',
+          950: 'rgb(var(--primary) / 0.5)',
+        },
+        // Original Zinc Palette
+        zinc: {
+          50: '#fafafa',
+          100: '#f4f4f5',
+          200: '#e4e4e7',
+          300: '#d4d4d8',
+          400: '#a1a1aa',
+          500: '#71717a',
+          600: '#52525b',
+          700: '#3f3f46',
+          800: '#27272a',
+          900: '#18181b',
+          950: '#09090b',
+        }
+      },
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
+        display: ['Space Grotesk', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+      },
+      animation: {
+        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+      }
+    }
+  },
+  plugins: [],
+}

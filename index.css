@@ -1,4 +1,8 @@
-/* Tailwind is loaded via CDN in index.html */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tailwind is loaded via CDN in index.html (REMOVED) - Now loaded via PostCSS */
 
 :root {
     --primary: 99 102 241;
@@ -48,6 +52,25 @@ textarea,
 /* Safe Area Helpers */
 .pt-safe {
     padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Window Controls Overlay (Desktop PWA) */
+.pwa-titlebar {
+    position: fixed;
+    top: env(titlebar-area-y, 0px);
+    left: env(titlebar-area-x, 0px);
+    width: env(titlebar-area-width, 100%);
+    height: env(titlebar-area-height, 0px);
+    -webkit-app-region: drag;
+    app-region: drag;
+    z-index: 9999;
+}
+
+/* Adjust top padding if WCO is active */
+@media (display-mode: standalone) {
+    .pt-wco {
+        padding-top: env(titlebar-area-height, 0px);
+    }
 }
 
 .pb-safe {
@@ -113,4 +136,29 @@ textarea,
 .dark .glass {
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Print Styles */
+@media print {
+    #root {
+        display: none !important;
+    }
+
+    #print-root {
+        display: block !important;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: white;
+        color: black;
+        z-index: 9999;
+    }
+}
+
+@media screen {
+    #print-root {
+        display: none !important;
+    }
 }

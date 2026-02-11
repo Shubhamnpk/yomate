@@ -36,9 +36,15 @@ const cleanupImmediate = () => {
   }
 };
 
+export const initializeAudio = async () => {
+  if (Tone.context.state !== 'running') {
+    await Tone.start();
+  }
+};
+
 export const playNoise = async (type: NoiseType) => {
-  // Ensure AudioContext is started (requires user gesture)
-  await Tone.start();
+  // Ensure AudioContext is started
+  await initializeAudio();
 
   // 1. Force immediate cleanup before starting new sound
   cleanupImmediate();

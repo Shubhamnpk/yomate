@@ -56,6 +56,7 @@ export interface DayLog {
     fixForTomorrow: string;
     aiMentorFeedback?: string;
   };
+  subjectMinutes?: Record<string, number>; // ID -> Minutes
 }
 
 export type AppMode = 'Normal' | 'Serious' | 'Exam';
@@ -79,6 +80,7 @@ export interface AppSettings {
   weeklyPlan: WeeklyPlan; // Weekly Scheduler
   deadlines: Deadline[]; // Horizon Feature
   rituals: string[]; // New: Habits
+  onboarded: boolean;
 }
 
 export type ViewState = 'TIMETABLE' | 'PLAN' | 'FOCUS' | 'NOTES' | 'NIGHT' | 'STATS';
