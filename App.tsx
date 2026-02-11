@@ -3,12 +3,15 @@ import React, { useEffect, useState, useRef } from 'react';
 import { initializeToday, getStoredLog, getAppSettings, resetApp, saveLog } from './services/storageService';
 import { DayLog, ViewState, AppSettings } from './types';
 import { getCurrentTime24 } from './services/timeService';
+import { initializeAudio } from './services/audioGen';
+import { haptic } from './services/hapticService';
 import { Navigation } from './components/Navigation';
 import { Timetable } from './components/Timetable';
 import { DeepWork } from './components/DeepWork';
 import { NightRoutine } from './components/NightRoutine';
 import { StatsView } from './components/StatsView';
 import { NotesView } from './components/NotesView';
+import { Onboarding } from './components/Onboarding';
 import { Moon, AlertTriangle, Terminal, X, RotateCcw, Move, Zap, Smartphone, CheckCircle2 } from 'lucide-react';
 
 // Map of accent names to RGB values for Tailwind variable injection
@@ -222,11 +225,17 @@ const DebugConsole: React.FC<{
   );
 }
 
+const VIEW_ORDER: ViewState[] = ['TIMETABLE', 'NOTES', 'FOCUS', 'STATS', 'NIGHT'];
+
 const App: React.FC = () => {
   const [currentView, setView] = useState<ViewState>('TIMETABLE');
   const [dayLog, setDayLog] = useState<DayLog | null>(null);
   const [settings, setSettings] = useState<AppSettings>(getAppSettings());
   const [initialFocusTask, setInitialFocusTask] = useState<string>('');
+
+  // Swipe Navigation State
+  const touchStart = useRef<number | null>(null);
+  const touchEnd = useRef<number | null>(null);
 
   // Time State (Lifted for Debugging)
   const [realTime, setRealTime] = useState(getCurrentTime24());
@@ -234,6 +243,40 @@ const App: React.FC = () => {
   const [showDebug, setShowDebug] = useState(false);
 
   const effectiveTime = overrideTime || realTime;
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStart.current = e.targetTouches[0].clientX;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEnd.current = e.targetTouches[0].clientX;
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStart.current || !touchEnd.current) return;
+    const distance = touchStart.current - touchEnd.current;
+    const isLeftSwipe = distance > 70;
+    const isRightSwipe = distance < -70;
+
+    if (isLeftSwipe || isRightSwipe) {
+      const currentIndex = VIEW_ORDER.indexOf(currentView);
+      let nextIndex = currentIndex;
+
+      if (isLeftSwipe && currentIndex < VIEW_ORDER.length - 1) {
+        nextIndex = currentIndex + 1;
+      } else if (isRightSwipe && currentIndex > 0) {
+        nextIndex = currentIndex - 1;
+      }
+
+      if (nextIndex !== currentIndex) {
+        haptic.light();
+        setView(VIEW_ORDER[nextIndex]);
+      }
+    }
+
+    touchStart.current = null;
+    touchEnd.current = null;
+  };
 
   useEffect(() => {
     // Clock Tick
@@ -253,6 +296,31 @@ const App: React.FC = () => {
     return () => {
       clearInterval(interval);
       window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  // Audio Context Unlock
+  useEffect(() => {
+    const unlockAudio = async () => {
+      try {
+        await initializeAudio();
+        // Remove listeners once successful
+        window.removeEventListener('click', unlockAudio);
+        window.removeEventListener('touchstart', unlockAudio);
+        window.removeEventListener('keydown', unlockAudio);
+      } catch (e) {
+        // Silently fail if not allowed yet
+      }
+    };
+
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
     };
   }, []);
 
@@ -310,41 +378,50 @@ const App: React.FC = () => {
     <div
       className={`h-[100dvh] w-full ${themeBg} text-zinc-900 dark:text-zinc-200 font-sans selection:bg-primary-500/30 overflow-hidden flex flex-col relative transition-colors duration-500`}
       style={{ '--primary': primaryRgb } as React.CSSProperties}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
-      <GlobalSleepHUD currentTime={effectiveTime} />
+      {!settings.onboarded ? (
+        <Onboarding onComplete={refreshApp} settings={settings} />
+      ) : (
+        <>
+          <GlobalSleepHUD currentTime={effectiveTime} />
 
-      <DebugConsole
-        show={showDebug}
-        onClose={() => setShowDebug(false)}
-        onOverrideTime={setOverrideTime}
-        currentTime={effectiveTime}
-        isOverridden={!!overrideTime}
-        onRefresh={refreshLog}
-      />
+          <DebugConsole
+            show={showDebug}
+            onClose={() => setShowDebug(false)}
+            onOverrideTime={setOverrideTime}
+            currentTime={effectiveTime}
+            isOverridden={!!overrideTime}
+            onRefresh={refreshLog}
+          />
 
-      <div className={`w-full max-w-md mx-auto h-full flex flex-col relative ${themeBg} shadow-2xl`}>
+          <div className={`w-full max-w-md mx-auto h-full flex flex-col relative ${themeBg} shadow-2xl`}>
 
-        {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto scroll-smooth pb-safe no-scrollbar">
-          {currentView === 'TIMETABLE' && (
-            <Timetable
-              log={dayLog}
-              refreshLog={refreshLog}
-              refreshApp={refreshApp}
-              currentTime={effectiveTime} // Pass down time
-            />
-          )}
-          {currentView === 'NOTES' && <NotesView log={dayLog} refreshLog={refreshLog} />}
-          {currentView === 'FOCUS' && <DeepWork log={dayLog} refreshLog={refreshLog} initialTask={initialFocusTask} />}
-          {currentView === 'STATS' && <StatsView />}
-          {currentView === 'NIGHT' && <NightRoutine log={dayLog} refreshLog={refreshLog} />}
-        </main>
+            {/* Main Content Area */}
+            <main className="flex-1 overflow-y-auto scroll-smooth pb-safe no-scrollbar">
+              {currentView === 'TIMETABLE' && (
+                <Timetable
+                  log={dayLog}
+                  refreshLog={refreshLog}
+                  refreshApp={refreshApp}
+                  currentTime={effectiveTime} // Pass down time
+                />
+              )}
+              {currentView === 'NOTES' && <NotesView log={dayLog} refreshLog={refreshLog} />}
+              {currentView === 'FOCUS' && <DeepWork log={dayLog} refreshLog={refreshLog} initialTask={initialFocusTask} />}
+              {currentView === 'STATS' && <StatsView />}
+              {currentView === 'NIGHT' && <NightRoutine log={dayLog} refreshLog={refreshLog} />}
+            </main>
 
-        {/* Navigation */}
-        <div className="absolute bottom-0 left-0 right-0 z-40 pointer-events-none flex justify-center pb-6">
-          <Navigation currentView={currentView} setView={setView} />
-        </div>
-      </div>
+            {/* Navigation */}
+            <div className="absolute bottom-0 left-0 right-0 z-40 pointer-events-none flex justify-center pb-6">
+              <Navigation currentView={currentView} setView={setView} />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };

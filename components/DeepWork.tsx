@@ -254,9 +254,21 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '' })
     }
 
     const isWorkPhase = currentPomoPhase === 'WORK';
+
+    // Subject Tracking Logic
+    const currentTask = sessionTaskRef.current;
+    const allSubjects = getCustomSubjects();
+    const matchedSubject = allSubjects.find(s => s.name === currentTask);
+    const updatedSubjectMinutes = { ...(currentLog.subjectMinutes || {}) };
+
+    if (matchedSubject && isWorkPhase) {
+      updatedSubjectMinutes[matchedSubject.id] = (updatedSubjectMinutes[matchedSubject.id] || 0) + minutesDone;
+    }
+
     const newLog = {
       ...currentLog,
       deepWorkMinutes: currentLog.deepWorkMinutes + (isWorkPhase ? minutesDone : 0),
+      subjectMinutes: updatedSubjectMinutes,
       schedule: currentLog.schedule.map(b => b.mode === 'Deep Work' ? { ...b, isCompleted: true } : b)
     };
 

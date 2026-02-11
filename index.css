@@ -1,4 +1,8 @@
-/* Tailwind is loaded via CDN in index.html */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tailwind is loaded via CDN in index.html (REMOVED) - Now loaded via PostCSS */
 
 :root {
     --primary: 99 102 241;
@@ -113,4 +117,29 @@ textarea,
 .dark .glass {
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Print Styles */
+@media print {
+    #root {
+        display: none !important;
+    }
+
+    #print-root {
+        display: block !important;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: white;
+        color: black;
+        z-index: 9999;
+    }
+}
+
+@media screen {
+    #print-root {
+        display: none !important;
+    }
 }

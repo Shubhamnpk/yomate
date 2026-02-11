@@ -40,12 +40,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   weeklyPlan: DEFAULT_WEEKLY_PLAN,
   deadlines: [],
   rituals: ['Exercise', 'Reading', 'Meditation'],
+  onboarded: false,
 };
 
 export const getAppSettings = (): AppSettings => {
   const stored = localStorage.getItem(SETTINGS_KEY);
   const parsed = stored ? JSON.parse(stored) : DEFAULT_SETTINGS;
-  return { ...DEFAULT_SETTINGS, ...parsed, weeklyPlan: { ...DEFAULT_WEEKLY_PLAN, ...parsed.weeklyPlan } };
+  return { ...DEFAULT_SETTINGS, ...parsed, onboarded: parsed.onboarded ?? false, weeklyPlan: { ...DEFAULT_WEEKLY_PLAN, ...parsed.weeklyPlan } };
 };
 
 export const saveAppSettings = (settings: AppSettings) => {
@@ -191,6 +192,11 @@ export const initializeToday = (dryRun = false): DayLog => {
       logs[date].completedRituals = [];
       saveLog(date, logs[date]);
     }
+    // Legacy support: ensure subjectMinutes exist
+    if (!logs[date].subjectMinutes) {
+      logs[date].subjectMinutes = {};
+      saveLog(date, logs[date]);
+    }
     return logs[date];
   }
 
@@ -229,6 +235,7 @@ export const initializeToday = (dryRun = false): DayLog => {
     scratchpad: '',
     todos: pendingTodos, // Init with carried over tasks
     completedRituals: [], // Init Rituals
+    subjectMinutes: {},
     timeEarned: 0, // Init Earned Time
     reflection: {
       whatWentRight: '',
@@ -391,6 +398,7 @@ const initializeTodayForDate = (date: string): DayLog => {
     scratchpad: '',
     todos: [],
     completedRituals: [],
+    subjectMinutes: {},
     timeEarned: 0,
     reflection: {
       whatWentRight: '',
