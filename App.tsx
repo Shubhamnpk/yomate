@@ -325,6 +325,22 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    // Window Controls Overlay (WCO) Logic
+    if ('windowControlsOverlay' in navigator) {
+      const wco = (navigator as any).windowControlsOverlay;
+
+      const handleGeometryChange = (e: any) => {
+        // We can react to geometry changes here if needed
+        // For now, CSS env variables handle the positioning
+        console.log('WCO Geometry Changed:', e.titlebarAreaRect);
+      };
+
+      wco.addEventListener('geometrychange', handleGeometryChange);
+      return () => wco.removeEventListener('geometrychange', handleGeometryChange);
+    }
+  }, []);
+
+  useEffect(() => {
     // Apply Dark Mode Class logic based on setting
     if (settings.themeMode === 'light') {
       document.documentElement.classList.remove('dark');
@@ -386,6 +402,7 @@ const App: React.FC = () => {
         <Onboarding onComplete={refreshApp} settings={settings} />
       ) : (
         <>
+          <div className="pwa-titlebar" />
           <GlobalSleepHUD currentTime={effectiveTime} />
 
           <DebugConsole
@@ -397,7 +414,7 @@ const App: React.FC = () => {
             onRefresh={refreshLog}
           />
 
-          <div className={`w-full max-w-md mx-auto h-full flex flex-col relative ${themeBg} shadow-2xl`}>
+          <div className={`w-full max-w-md mx-auto h-full flex flex-col relative ${themeBg} shadow-2xl pt-wco`}>
 
             {/* Main Content Area */}
             <main className="flex-1 overflow-y-auto scroll-smooth pb-safe no-scrollbar">
