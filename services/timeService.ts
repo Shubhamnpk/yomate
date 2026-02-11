@@ -11,6 +11,7 @@ export const formatTo12h = (time24: string): string => {
 // Check if current time is within a range
 export const isTimeInRange = (current: string, start: string, end: string): boolean => {
   if (end < start) {
+    // Handles overnight ranges like 22:00 - 05:00
     return current >= start || current < end;
   }
   return current >= start && current < end;
@@ -19,7 +20,9 @@ export const isTimeInRange = (current: string, start: string, end: string): bool
 // Get current 24h time HH:mm
 export const getCurrentTime24 = (): string => {
   const now = new Date();
-  return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  const h = now.getHours().toString().padStart(2, '0');
+  const m = now.getMinutes().toString().padStart(2, '0');
+  return `${h}:${m}`;
 };
 
 // --- Time Math Helpers ---
@@ -27,14 +30,25 @@ export const getCurrentTime24 = (): string => {
 export const getMinutesDiff = (start: string, end: string): number => {
   const [h1, m1] = start.split(':').map(Number);
   const [h2, m2] = end.split(':').map(Number);
-  const startMins = h1 * 60 + m1;
-  const endMins = h2 * 60 + m2;
+
+  let startMins = h1 * 60 + m1;
+  let endMins = h2 * 60 + m2;
+
+  // If end is before start, assume it's next day
+  if (endMins < startMins) {
+    endMins += 24 * 60;
+  }
+
   return endMins - startMins;
 };
 
 export const addMinutes = (time: string, minutes: number): string => {
   const [h, m] = time.split(':').map(Number);
-  const totalMinutes = h * 60 + m + minutes;
+  let totalMinutes = h * 60 + m + minutes;
+
+  // Handle negative minutes
+  while (totalMinutes < 0) totalMinutes += 24 * 60;
+
   const newH = Math.floor(totalMinutes / 60) % 24;
   const newM = totalMinutes % 60;
   return `${newH.toString().padStart(2, '0')}:${newM.toString().padStart(2, '0')}`;

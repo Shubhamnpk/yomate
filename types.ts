@@ -47,7 +47,7 @@ export interface DayLog {
   energy: number; // 1-5
   scratchpad: string; // Brain Dump text
   todos: TodoItem[]; // Brain Dump Todos
-  completedRituals: string[]; // New: Tracked Habits
+  completedRituals: string[]; // Tracked Habits
   timeEarned: number; // For "Momentum Shift" efficiency tracking
   primaryObjective?: string; // For "The Forge"
   reflection: {

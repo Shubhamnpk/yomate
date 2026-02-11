@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { DayLog, ScheduleBlock, AppMode } from '../types';
-import { updateScheduleStatus, updateScheduleBlock, splitBlockInSchedule, shiftScheduleForward, getAppSettings, getYesterdayLog, saveLog } from '../services/storageService';
+import { updateScheduleStatus, updateScheduleBlock, splitBlockInSchedule, shiftScheduleForward, getAppSettings, getYesterdayLog, saveLog, getStreak } from '../services/storageService';
 import { formatTo12h, isTimeInRange, getMinutesDiff } from '../services/timeService';
 import { SubjectManager } from './SubjectManager';
 import { EditBlockModal } from './EditBlockModal';
@@ -9,7 +9,8 @@ import { BlockActionModal } from './BlockActionModal';
 import { SettingsView } from './SettingsView';
 import { BrainDump } from './BrainDump';
 import { getCustomSubjects } from '../services/storageService';
-import { Settings, Pencil, CheckCircle2, Circle, Play, ChevronRight, MessageSquareQuote, X, Moon, Sunrise, Coffee, AlarmClock, StickyNote, Flag, AlertTriangle, Dumbbell, Zap } from 'lucide-react';
+import { Settings, Pencil, CheckCircle2, Circle, Play, ChevronRight, MessageSquareQuote, X, Moon, Sunrise, Coffee, AlarmClock, StickyNote, Flag, AlertTriangle, Dumbbell, Zap, Flame } from 'lucide-react';
+import { haptic } from '../services/hapticService';
 
 interface Props {
   log: DayLog;
@@ -26,6 +27,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
   const [editMode, setEditMode] = useState(false);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [appMode, setAppMode] = useState<AppMode>('Normal');
+  const [streak, setStreak] = useState(0);
   const [userName, setUserName] = useState('Student');
   const [rituals, setRituals] = useState<string[]>([]);
 
@@ -71,6 +73,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
     setAllSubjects(getCustomSubjects());
     const settings = getAppSettings();
     setAppMode(settings.appMode);
+    setStreak(getStreak());
     setUserName(settings.userName || 'Student');
     setRituals(settings.rituals || []);
 
@@ -198,15 +201,19 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
   };
 
   const getRealActivityName = (blockActivity: string) => {
-    if (blockActivity.includes('Study Block 1') && log.selectedSubjects.main1) {
+    const isMain1 = blockActivity.includes('Main 1') || blockActivity.includes('Study Block 1');
+    const isMain2 = blockActivity.includes('Main 2') || blockActivity.includes('Study Block 2');
+    const isLight = blockActivity.includes('Light Study') || blockActivity.includes('Light Review');
+
+    if (isMain1 && log.selectedSubjects.main1) {
       const sub = allSubjects.find(s => s.id === log.selectedSubjects.main1);
       return sub ? `Study: ${sub.name}` : blockActivity;
     }
-    if (blockActivity.includes('Study Block 2') && log.selectedSubjects.main2) {
+    if (isMain2 && log.selectedSubjects.main2) {
       const sub = allSubjects.find(s => s.id === log.selectedSubjects.main2);
       return sub ? `Study: ${sub.name}` : blockActivity;
     }
-    if (blockActivity.includes('Light Study') && log.selectedSubjects.light) {
+    if (isLight && log.selectedSubjects.light) {
       const sub = allSubjects.find(s => s.id === log.selectedSubjects.light);
       return sub ? `Review: ${sub.name}` : blockActivity;
     }
@@ -273,6 +280,12 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
             Hi, {userName}
           </h1>
           <div className="flex items-center gap-2 mt-1">
+            {streak > 0 && (
+              <div className="flex items-center gap-1 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-full animate-in zoom-in">
+                <Flame size={12} className="text-orange-500 fill-orange-500 animate-pulse" />
+                <span className="text-[10px] font-bold text-orange-500 font-mono">{streak}</span>
+              </div>
+            )}
             <p className="text-zinc-500 text-sm font-medium uppercase tracking-wide">
               {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
             </p>
@@ -284,8 +297,8 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
         <div className="flex gap-2">
           {/* Brain Dump Button */}
           <button
-            onClick={() => setShowBrainDump(true)}
-            className="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-400 hover:text-amber-500 hover:border-amber-500/50 transition-colors shadow-sm relative group"
+            onClick={() => { haptic.medium(); setShowBrainDump(true); }}
+            className="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-400 hover:text-amber-500 hover:border-amber-500/50 transition-colors shadow-sm relative group active-scale"
             title="Brain Dump"
           >
             <StickyNote size={20} />
@@ -295,8 +308,8 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
           </button>
 
           <button
-            onClick={() => setShowSettings(true)}
-            className="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-400 hover:text-black dark:hover:text-white hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-sm"
+            onClick={() => { haptic.medium(); setShowSettings(true); }}
+            className="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-400 hover:text-black dark:hover:text-white hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-sm active-scale"
           >
             <Settings size={20} />
           </button>
@@ -355,11 +368,14 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
             return (
               <button
                 key={ritual}
-                onClick={() => toggleRitual(ritual)}
-                className={`flex-shrink-0 px-4 py-2 rounded-full border text-xs font-bold uppercase tracking-wider transition-all
+                onClick={() => {
+                  haptic.light();
+                  toggleRitual(ritual);
+                }}
+                className={`flex-shrink-0 px-5 py-3 rounded-full border text-[10px] font-bold uppercase tracking-widest transition-all active-scale
                         ${isDone
-                    ? 'bg-emerald-500 text-white border-emerald-600 shadow-md shadow-emerald-500/20'
-                    : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400'}`}
+                    ? 'bg-emerald-500 text-white border-emerald-600 shadow-lg shadow-emerald-500/20'
+                    : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500 border-zinc-200 dark:border-zinc-800'}`}
               >
                 {isDone && <CheckCircle2 size={12} className="inline mr-1" />}
                 {ritual}
@@ -434,21 +450,21 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
 
       <div className="flex items-center gap-2 mb-8">
         <button
-          onClick={() => setShowStrategy(true)}
-          className="flex-1 flex items-center justify-center gap-2 text-xs font-semibold bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 py-3 rounded-xl transition-colors shadow-sm"
+          onClick={() => { haptic.light(); setShowStrategy(true); }}
+          className="flex-1 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 py-4 rounded-2xl transition-all shadow-sm active-scale"
         >
           Subject Strategy
         </button>
 
         <button
-          onClick={() => setEditMode(!editMode)}
-          className={`flex-1 flex items-center justify-center gap-2 text-xs font-semibold border py-3 rounded-xl transition-all duration-300 shadow-sm
+          onClick={() => { haptic.medium(); setEditMode(!editMode); }}
+          className={`flex-1 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest border py-4 rounded-2xl transition-all duration-300 shadow-sm active-scale
               ${editMode
-              ? 'bg-primary-100 dark:bg-primary-900 border-primary-500/50 text-primary-700 dark:text-primary-300'
-              : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}
+              ? 'bg-primary-500 border-primary-600 text-white shadow-lg shadow-primary-500/20'
+              : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50'}`}
         >
           <Pencil size={14} />
-          {editMode ? 'Done Editing' : 'Modify Today'}
+          {editMode ? 'Finish' : 'Edit Day'}
         </button>
       </div>
 

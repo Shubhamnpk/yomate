@@ -39,12 +39,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   appMode: 'Normal',
   weeklyPlan: DEFAULT_WEEKLY_PLAN,
   deadlines: [],
-  rituals: ['Exercise', 'Reading', 'Meditation'], // Default Habits
+  rituals: ['Exercise', 'Reading', 'Meditation'],
 };
 
 export const getAppSettings = (): AppSettings => {
   const stored = localStorage.getItem(SETTINGS_KEY);
-  // Merge with default to ensure new fields (userName, weeklyPlan, deadlines, rituals) exist for old users
   const parsed = stored ? JSON.parse(stored) : DEFAULT_SETTINGS;
   return { ...DEFAULT_SETTINGS, ...parsed, weeklyPlan: { ...DEFAULT_WEEKLY_PLAN, ...parsed.weeklyPlan } };
 };
@@ -106,10 +105,12 @@ export const importData = (jsonString: string) => {
 };
 
 export const resetApp = () => {
-  if (confirm("Are you sure? This will delete all history, custom subjects, and settings.")) {
-    localStorage.clear();
-    window.location.reload();
-  }
+  // Only clear YoMeet-specific keys, not all localStorage
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(TEMPLATE_KEY);
+  localStorage.removeItem(SUBJECTS_KEY);
+  localStorage.removeItem(SETTINGS_KEY);
+  window.location.reload();
 };
 
 // --- HISTORY & LOGGING ---
@@ -130,6 +131,33 @@ export const getHistory = (days: number): DayLog[] => {
     }
   }
   return result;
+};
+
+// Helper: Get current streak (consecutive days with >15 mins deep work)
+export const getStreak = (): number => {
+  const logs = getStoredLog();
+  const todayStr = getTodayDateString();
+  let streak = 0;
+  let date = new Date(todayStr); // Start from today
+
+  // If today has meaningful work, count it, otherwise start checking from yesterday
+  if (logs[todayStr] && logs[todayStr].deepWorkMinutes > 15) {
+    streak++;
+  }
+
+  // Check yesterday and backwards
+  date.setDate(date.getDate() - 1);
+
+  while (true) {
+    const dStr = date.toISOString().split('T')[0];
+    if (logs[dStr] && logs[dStr].deepWorkMinutes > 15) {
+      streak++;
+      date.setDate(date.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+  return streak;
 };
 
 // New Helper: Get specifically yesterday's log to see reflection
@@ -169,6 +197,16 @@ export const initializeToday = (dryRun = false): DayLog => {
   const template = getScheduleTemplate();
   const settings = getAppSettings();
 
+  // Find incomplete todos from yesterday
+  let pendingTodos: any[] = [];
+  const yesterdayLog = getYesterdayLog();
+  if (yesterdayLog && yesterdayLog.todos) {
+    pendingTodos = yesterdayLog.todos.filter(t => !t.completed).map(t => ({
+      ...t,
+      text: `(Yesterday) ${t.text}` // Mark as carry over
+    }));
+  }
+
   // Weekly Plan Injection
   const dayOfWeek = new Date().getDay(); // 0-6
   const todaysPlan = settings.weeklyPlan[dayOfWeek] || { main1: null, main2: null, light: null };
@@ -189,7 +227,7 @@ export const initializeToday = (dryRun = false): DayLog => {
     mood: 3,
     energy: 3,
     scratchpad: '',
-    todos: [], // Init Todos
+    todos: pendingTodos, // Init with carried over tasks
     completedRituals: [], // Init Rituals
     timeEarned: 0, // Init Earned Time
     reflection: {
