@@ -29,7 +29,7 @@ export class ErrorBoundary extends Component<Props, State> {
     }
 
     componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-        console.error('YoMeet Crash Report:', error, errorInfo);
+        console.error('Yomate Crash Report:', error, errorInfo);
         this.setState({ errorInfo });
     }
     setState(arg0: { errorInfo: ErrorInfo; }) {
@@ -102,7 +102,7 @@ export class ErrorBoundary extends Component<Props, State> {
                         </div>
 
                         <p className="text-[10px] text-zinc-700 font-mono">
-                            YoMeet Recovery Mode
+                            Yomate Recovery Mode
                         </p>
                     </div>
                 </div>

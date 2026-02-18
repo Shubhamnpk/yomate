@@ -19,6 +19,16 @@ class HapticService {
         if (this.isEnabled()) window.navigator.vibrate(20);
     }
 
+    // Modern impact - sharp but noticeable
+    impact() {
+        if (this.isEnabled()) window.navigator.vibrate([15, 10, 15]);
+    }
+
+    // Heavy pulse
+    heavy() {
+        if (this.isEnabled()) window.navigator.vibrate(40);
+    }
+
     // Success pattern (double tap)
     success() {
         if (this.isEnabled()) window.navigator.vibrate([20, 30, 20]);

@@ -26,24 +26,39 @@ export const requestNotificationPermission = async (): Promise<boolean> => {
     return permissionGranted;
 };
 
-export const sendTimerNotification = (title: string, body: string) => {
+export const sendTimerNotification = (title: string, body: string, type: 'success' | 'alert' | 'info' = 'info') => {
     if (!permissionGranted || Notification.permission !== 'granted') return;
+
+    const icons = {
+        success: '🎯',
+        alert: '⚠️',
+        info: 'ℹ️'
+    };
+
+    const colors = {
+        success: '#10b981', // emerald
+        alert: '#f43f5e',   // rose
+        info: '#6366f1'    // indigo
+    };
 
     try {
         const notification = new Notification(title, {
             body,
-            icon: 'data:image/svg+xml,' + encodeURIComponent(
-                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="#6366f1"/><path d="M25 30 L50 60 L75 30" stroke="white" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/><line x1="50" y1="60" x2="50" y2="85" stroke="white" stroke-width="10" stroke-linecap="round"/></svg>'
-            ),
-            badge: '🎯',
-            tag: 'yomeet-timer', // Replaces previous notification instead of stacking
+            icon: '/yomate_icon_512_1770839402974.png',
+            badge: '/icon.svg',
+            tag: 'yomate-timer',
             silent: false,
+            // vibrate: [200, 100, 200], // Not supported by all browsers via new Notification()
+            // @ts-ignore - Some browsers support image in options
+            image: type === 'success' ? '/yomate.png' : undefined,
         });
 
-        // Auto-close after 8 seconds
-        setTimeout(() => notification.close(), 8000);
+        // Haptic fallback if supported and if this code runs in an environment where hapticService works
+        // (Though notifications are usually for when the app is backgrounded)
 
-        // Focus the tab when clicked
+        // Auto-close after 10 seconds
+        setTimeout(() => notification.close(), 10000);
+
         notification.onclick = () => {
             window.focus();
             notification.close();
@@ -55,7 +70,8 @@ export const sendTimerNotification = (title: string, body: string) => {
 
 export const sendSleepReminder = () => {
     sendTimerNotification(
-        '🌙 Sleep Protocol',
-        'Time to prepare for sleep. Your target is 00:30.'
+        'Yomate | Sleep Protocol',
+        'Time to prepare for sleep. Your target is 00:30.',
+        'info'
     );
 };

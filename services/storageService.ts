@@ -106,7 +106,7 @@ export const importData = (jsonString: string) => {
 };
 
 export const resetApp = () => {
-  // Only clear YoMeet-specific keys, not all localStorage
+  // Only clear Yomate-specific keys, not all localStorage
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(TEMPLATE_KEY);
   localStorage.removeItem(SUBJECTS_KEY);

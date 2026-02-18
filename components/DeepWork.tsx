@@ -2,15 +2,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DayLog, Subject } from '../types';
 import { saveLog, getAppSettings, getCustomSubjects } from '../services/storageService';
-import { playNoise, stopNoise, playSuccessTink, NoiseType } from '../services/audioGen';
+import { playNoise, stopNoise, playSuccessTink, playAscensionSound, NoiseType } from '../services/audioGen';
 import { Play, Square, Smartphone, Check, Ban, Plus, Timer, Brain, Coffee, Volume2, ListTodo, X, Eye, EyeOff, Tag, Sparkles } from 'lucide-react';
 import { haptic } from '../services/hapticService';
 import { requestNotificationPermission, sendTimerNotification } from '../services/notificationService';
+import { getMinutesDiff, getCurrentTime24 } from '../services/timeService';
 
 interface Props {
   log: DayLog;
   refreshLog: () => void;
-  initialTask?: string; // New prop
+  initialTask?: string;
+  scheduledEnd?: string | null;
 }
 
 type FocusMode = 'DEEP' | 'POMODORO';
@@ -27,7 +29,16 @@ const NOISE_THEMES: Record<NoiseType, { bg: string, accent: string, glow: string
   campfire: { bg: 'bg-orange-950', accent: 'orange', glow: 'orange-900' },
 };
 
-export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '' }) => {
+const SUCCESS_TITLES = [
+  "Session Ascended",
+  "Intensity Achieved",
+  "Momentum Mastered",
+  "Flow State Locked",
+  "Depth Conquered",
+  "Peak Protocol Meta"
+];
+
+export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', scheduledEnd = null }) => {
   const [timerState, setTimerState] = useState<TimerState>('IDLE');
   const [focusMode, setFocusMode] = useState<FocusMode>('DEEP');
 
@@ -46,6 +57,7 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '' })
 
   // Subject Selection
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [successTitle, setSuccessTitle] = useState('');
 
   const [zenMode, setZenMode] = useState(false);
   const [showAbortModal, setShowAbortModal] = useState(false);
@@ -79,10 +91,20 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '' })
 
   // Update session task if prop changes (e.g. navigation)
   useEffect(() => {
-    if (initialTask && timerState === 'IDLE') {
-      setSessionTask(initialTask);
+    if (timerState === 'IDLE') {
+      if (initialTask) {
+        setSessionTask(initialTask);
+      }
+
+      if (scheduledEnd) {
+        const now = getCurrentTime24();
+        const diff = getMinutesDiff(now, scheduledEnd);
+        if (diff > 0) {
+          setSelectedDuration(diff);
+        }
+      }
     }
-  }, [initialTask]);
+  }, [initialTask, scheduledEnd, timerState]);
 
   useEffect(() => { logRef.current = log; }, [log]);
   useEffect(() => { focusModeRef.current = focusMode; }, [focusMode]);
@@ -219,20 +241,44 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '' })
 
     playSuccessTink();
 
+    // Celebratory Effects
+    if (focusModeRef.current === 'DEEP' || (focusModeRef.current === 'POMODORO' && pomoPhaseRef.current === 'WORK')) {
+      playAscensionSound();
+
+      // @ts-ignore - External CDN import
+      import('https://esm.sh/canvas-confetti').then(module => {
+        const confetti = module.default;
+        confetti({
+          particleCount: 150,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ['#6366f1', '#a855f7', '#ec4899']
+        });
+      });
+    }
+
     // Send Browser Notification
     const currentFocusMode = focusModeRef.current;
     const currentPomoPhase = pomoPhaseRef.current;
     const currentPomoCount = pomoCountRef.current;
     const currentTotalTime = totalTimeRef.current;
 
+    const successQuotes = [
+      "Depth is the new IQ.",
+      "Intensity is the prize.",
+      "The zone is where you belong.",
+      "Momentum is your ally."
+    ];
+    const randomQuote = successQuotes[Math.floor(Math.random() * successQuotes.length)];
+
     if (currentFocusMode === 'POMODORO') {
       if (currentPomoPhase === 'WORK') {
-        sendTimerNotification('Work Session Complete', 'Time for a break! Take 5 minutes.');
+        sendTimerNotification('Yomate | Work Session Complete', `Time for a break! ${randomQuote}`, 'success');
       } else {
-        sendTimerNotification('Break Over', 'Time to get back to work!');
+        sendTimerNotification('Yomate | Break Over', 'Time to get back into the zone!', 'info');
       }
     } else {
-      sendTimerNotification('Deep Work Complete', 'Great session! Take a moment to reflect.');
+      sendTimerNotification('Yomate | Deep Work Complete', `Great session! ${randomQuote}`, 'success');
     }
 
     const minutesDone = Math.ceil(currentTotalTime / 60);
@@ -276,6 +322,7 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '' })
     refreshLog();
 
     setLastSessionMins(minutesDone);
+    setSuccessTitle(SUCCESS_TITLES[Math.floor(Math.random() * SUCCESS_TITLES.length)]);
     setShowSuccessModal(true);
 
     if (currentFocusMode === 'DEEP') {
@@ -820,15 +867,23 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '' })
         <div className="fixed inset-0 z-[400] flex items-center justify-center p-6 animate-in fade-in duration-500">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md"></div>
           <div className="relative w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-10 shadow-2xl animate-in zoom-in-95 curve-bounce duration-500 text-center">
-            <div className="w-24 h-24 bg-primary-500/10 rounded-full flex items-center justify-center mb-8 mx-auto relative">
+            <div className="w-24 h-24 bg-primary-500/10 rounded-full flex items-center justify-center mb-8 mx-auto relative overflow-hidden p-4">
               <div className="absolute inset-0 bg-primary-500/20 rounded-full animate-ping"></div>
-              <Sparkles size={48} className="text-primary-400 relative z-10" />
+              <img src="/yomate.png" alt="success logo" className="w-full h-full object-cover relative z-10 drop-shadow-[0_0_15px_rgba(var(--primary),0.5)]" />
             </div>
 
-            <h3 className="text-3xl font-display font-bold text-white mb-2">
-              {focusMode === 'POMODORO' && pomoPhase !== 'WORK' ? 'Rest Protocol.' : 'Ascended.'}
+            <h3 className="text-3xl font-display font-bold text-white mb-2 tracking-tight animate-in slide-in-from-top-4 duration-700">
+              {focusMode === 'POMODORO' && pomoPhase !== 'WORK'
+                ? 'Rest Protocol.'
+                : successTitle || 'Session Complete'
+              }
             </h3>
-            <p className="text-zinc-400 mb-8 leading-relaxed">
+            <div className="flex justify-center gap-1 mb-6 animate-in fade-in duration-1000 delay-300">
+              {[1, 2, 3, 4, 5].map(i => (
+                <Sparkles key={i} size={14} className="text-amber-400 animate-pulse" style={{ animationDelay: `${i * 200}ms` }} />
+              ))}
+            </div>
+            <p className="text-zinc-400 mb-8 leading-relaxed max-w-[280px] mx-auto">
               {focusMode === 'POMODORO' && pomoPhase === 'SHORT_BREAK'
                 ? "Session complete. Take 5 minutes to stretch and breathe. You're doing great."
                 : focusMode === 'POMODORO' && pomoPhase === 'LONG_BREAK'

@@ -60,7 +60,7 @@ export const Onboarding: React.FC<Props> = ({ onComplete, settings }) => {
                             <div className={`relative w-28 h-28 ${isDark ? 'bg-zinc-900 border-zinc-800/50' : 'bg-white border-zinc-100 shadow-xl'} border-2 rounded-[2.5rem] flex items-center justify-center shadow-2xl rotate-[15deg] overflow-hidden group transition-all duration-700 hover:rotate-0`}>
                                 <div className="absolute inset-0 bg-gradient-to-tr from-primary-500/20 to-transparent"></div>
                                 <div className="absolute inset-0 bg-white/10 group-hover:translate-x-full transition-transform duration-1000"></div>
-                                <Sparkles className="text-primary-500 w-14 h-14 drop-shadow-[0_0_15px_rgba(var(--primary),0.5)]" />
+                                <img src="/yomate.png" alt="yomate logo" className="w-full h-full object-cover p-4 drop-shadow-[0_0_15px_rgba(var(--primary),0.5)]" />
                             </div>
                         </div>
 
@@ -68,7 +68,7 @@ export const Onboarding: React.FC<Props> = ({ onComplete, settings }) => {
                             <div className="animate-in fade-in slide-in-from-bottom duration-700 delay-300">
                                 <span className={`text-[10px] font-bold uppercase tracking-[0.4em] ${isDark ? 'text-zinc-500/50' : 'text-zinc-400'}`}>Protocol v5.2 Active</span>
                                 <h1 className={`text-5xl font-display font-bold tracking-tight mt-2 ${isDark ? 'text-white' : 'text-zinc-900'} drop-shadow-sm`}>
-                                    <span className="text-primary-500 italic">yomate</span>
+                                    <span className="text-primary-500 italic">Yomate</span>
                                 </h1>
                             </div>
                             <p className={`${textSub} text-base font-medium max-w-[280px] leading-relaxed animate-in fade-in slide-in-from-bottom duration-700 delay-500`}>
