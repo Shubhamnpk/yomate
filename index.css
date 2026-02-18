@@ -1,12 +1,11 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Tailwind is loaded via CDN in index.html (REMOVED) - Now loaded via PostCSS */
-
 :root {
     --primary: 99 102 241;
-    /* Default Indigo */
 }
 
 * {
@@ -23,15 +22,60 @@ body {
     font-feature-settings: "ss01", "ss02", "cv01", "cv02", "cv03";
     user-select: none;
     touch-action: manipulation;
+    background-color: #000;
 }
 
-/* Allow selection in specific areas */
-input,
-textarea,
-[contenteditable="true"],
-.selectable {
-    user-select: text;
-    -webkit-user-select: text;
+.font-display {
+    font-family: 'Outfit', sans-serif;
+}
+
+.font-mono {
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* --- Premium Design System --- */
+
+.glass-morphism {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.dark .glass-morphism {
+    background: rgba(10, 10, 12, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.glow-indigo {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.2);
+}
+
+.glow-emerald {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+}
+
+.glow-rose {
+    box-shadow: 0 0 20px rgba(244, 63, 94, 0.2);
+}
+
+.tech-border {
+    position: relative;
+}
+
+.tech-border::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border: 1px solid transparent;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 40%, rgba(255, 255, 255, 0) 60%, rgba(255, 255, 255, 0.1) 100%) border-box;
+    -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: destination-out;
+    mask-composite: exclude;
+    border-radius: inherit;
 }
 
 /* Native Scrollbar Simulation */
@@ -54,24 +98,7 @@ textarea,
     padding-top: env(safe-area-inset-top, 0px);
 }
 
-/* Window Controls Overlay (Desktop PWA) */
-.pwa-titlebar {
-    position: fixed;
-    top: env(titlebar-area-y, 0px);
-    left: env(titlebar-area-x, 0px);
-    width: env(titlebar-area-width, 100%);
-    height: env(titlebar-area-height, 0px);
-    -webkit-app-region: drag;
-    app-region: drag;
-    z-index: 9999;
-}
 
-/* Adjust top padding if WCO is active */
-@media (display-mode: standalone) {
-    .pt-wco {
-        padding-top: env(titlebar-area-height, 0px);
-    }
-}
 
 .pb-safe {
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -101,10 +128,9 @@ textarea,
 }
 
 .animate-slide-up {
-    animation: slide-up 0.3s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+    animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Shake Animation for alerts */
 @keyframes shake {
 
     0%,

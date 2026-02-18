@@ -1,92 +1,104 @@
 {
-    "name": "yomate",
-    "short_name": "yomate",
-    "description": "A high-performance environment for deep work, study protocols, and time mastery.",
-    "start_url": "/",
-    "display": "standalone",
-    "background_color": "#09090b",
-    "theme_color": "#6366f1",
-    "orientation": "portrait-primary",
-    "categories": [
-        "productivity",
-        "education",
-        "utilities"
-    ],
-    "dir": "ltr",
-    "lang": "en-US",
-    "prefer_related_applications": false,
-    "icons": [
+  "name": "Yomate",
+  "short_name": "Yomate",
+  "description": "A high-performance environment for deep work, study protocols, and time mastery.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "orientation": "portrait-primary",
+  "categories": [
+    "productivity",
+    "education",
+    "utilities"
+  ],
+  "dir": "ltr",
+  "lang": "en-US",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/icons/manifest-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/manifest-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/manifest-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/manifest-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/yomate.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Start Deep Work",
+      "short_name": "Focus",
+      "description": "Initiate a focus session immediately",
+      "url": "/?view=FOCUS",
+      "icons": [
         {
-            "src": "/yomate.png",
-            "sizes": "any",
-            "type": "image/png",
-            "purpose": "any"
-        },
-        {
-            "src": "/yomate.png",
-            "sizes": "192x192",
-            "type": "image/png",
-            "purpose": "any"
-        },
-        {
-            "src": "/yomate.png",
-            "sizes": "512x512",
-            "type": "image/png",
-            "purpose": "maskable"
+          "src": "/yomate.png",
+          "sizes": "192x192"
         }
-    ],
-    "shortcuts": [
+      ]
+    },
+    {
+      "name": "View Schedule",
+      "short_name": "Plan",
+      "description": "Open your daily timetable",
+      "url": "/?view=TIMETABLE",
+      "icons": [
         {
-            "name": "Start Deep Work",
-            "short_name": "Focus",
-            "description": "Initiate a focus session immediately",
-            "url": "/?view=FOCUS",
-            "icons": [
-                {
-                    "src": "/yomate.png",
-                    "sizes": "192x192"
-                }
-            ]
-        },
-        {
-            "name": "View Schedule",
-            "short_name": "Plan",
-            "description": "Open your daily timetable",
-            "url": "/?view=TIMETABLE",
-            "icons": [
-                {
-                    "src": "/yomate.png",
-                    "sizes": "192x192"
-                }
-            ]
-        },
-        {
-            "name": "Brain Dump",
-            "short_name": "Notes",
-            "description": "Capture a quick thought",
-            "url": "/?view=NOTES",
-            "icons": [
-                {
-                    "src": "/yomate.png",
-                    "sizes": "192x192"
-                }
-            ]
+          "src": "/icons/manifest-icon-192.png",
+          "sizes": "192x192"
         }
-    ],
-    "screenshots": [
+      ]
+    },
+    {
+      "name": "Brain Dump",
+      "short_name": "Notes",
+      "description": "Capture a quick thought",
+      "url": "/?view=NOTES",
+      "icons": [
         {
-            "src": "https://images.unsplash.com/photo-1611224923853-80b023f02d71?w=800&q=80",
-            "sizes": "1280x720",
-            "type": "image/webp",
-            "form_factor": "wide",
-            "label": "Deep Work Interface"
-        },
-        {
-            "src": "https://images.unsplash.com/photo-1484480974693-6ca0a78fb36b?w=800&q=80",
-            "sizes": "720x1280",
-            "type": "image/webp",
-            "form_factor": "narrow",
-            "label": "Daily Protocol"
+          "src": "/icons/manifest-icon-192.png",
+          "sizes": "192x192"
         }
-    ]
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "https://images.unsplash.com/photo-1611224923853-80b023f02d71?w=800&q=80",
+      "sizes": "1280x720",
+      "type": "image/webp",
+      "form_factor": "wide",
+      "label": "Deep Work Interface"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1484480974693-6ca0a78fb36b?w=800&q=80",
+      "sizes": "720x1280",
+      "type": "image/webp",
+      "form_factor": "narrow",
+      "label": "Daily Protocol"
+    }
+  ]
 }

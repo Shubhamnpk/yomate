@@ -203,14 +203,43 @@ export const setVolume = (val: number) => {
 
 export const playSuccessTink = async () => {
   await Tone.start();
-  const synth = new Tone.PolySynth(Tone.Synth).toDestination();
-  synth.set({
+  const synth = new Tone.MonoSynth({
     oscillator: { type: "sine" },
-    envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.1 }
-  });
+    envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.1 },
+    filterEnvelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.05, baseFrequency: 2000, octaves: 2 }
+  }).toDestination();
 
   const now = Tone.now();
   synth.triggerAttackRelease("C6", "16n", now);
-  synth.triggerAttackRelease("E6", "16n", now + 0.05);
   setTimeout(() => synth.dispose(), 500);
+};
+
+export const playAscensionSound = async () => {
+  await Tone.start();
+
+  // Shimmering PolySynth for a tech-elegant feel
+  const synth = new Tone.PolySynth(Tone.Synth).toDestination();
+  synth.set({
+    oscillator: { type: "sine" },
+    envelope: { attack: 0.02, decay: 0.5, sustain: 0.3, release: 1.2 }
+  });
+
+  // High-pass filter for clarity
+  const hp = new Tone.Filter(800, "highpass").toDestination();
+  synth.connect(hp);
+
+  const now = Tone.now();
+  // Pentatonic Shimmer
+  const notes = ["C5", "D5", "E5", "G5", "A5", "C6", "D6", "E6"];
+  notes.forEach((note, i) => {
+    synth.triggerAttackRelease(note, "4n", now + i * 0.08, 0.4);
+  });
+
+  // Final broad chord
+  synth.triggerAttackRelease(["C5", "E5", "G5", "B5", "D6"], "1n", now + 0.8, 0.3);
+
+  setTimeout(() => {
+    synth.dispose();
+    hp.dispose();
+  }, 4000);
 };

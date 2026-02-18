@@ -82,7 +82,7 @@ const PrintLayout: React.FC<{
             </div>
 
             <div className="mt-auto pt-12 border-t border-zinc-200 text-center">
-                <p className="text-xs font-bold uppercase tracking-[0.3em] text-zinc-400 mb-2">YoMeet Productivity Suite</p>
+                <p className="text-xs font-bold uppercase tracking-[0.3em] text-zinc-400 mb-2">Yomate Productivity Suite</p>
                 <p className="text-zinc-300 italic text-sm">"Consistency is the code to greatness."</p>
             </div>
         </div>

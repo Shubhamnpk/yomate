@@ -181,9 +181,9 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
     refreshLog();
   };
 
-  const handleQuickFocus = (e: React.MouseEvent, activityName: string) => {
+  const handleQuickFocus = (e: React.MouseEvent, activityName: string, scheduledEnd?: string) => {
     e.stopPropagation();
-    const event = new CustomEvent('navigate-focus', { detail: { task: activityName } });
+    const event = new CustomEvent('navigate-focus', { detail: { task: activityName, scheduledEnd } });
     window.dispatchEvent(event);
   };
 
@@ -557,7 +557,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
                   {isFocusable && !block.isCompleted && !editMode && (
                     <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800/50 flex animate-in slide-in-from-top-2">
                       <button
-                        onClick={(e) => handleQuickFocus(e, activityName)}
+                        onClick={(e) => handleQuickFocus(e, activityName, block.endTime)}
                         className="flex items-center gap-2 text-xs font-bold text-primary-600 dark:text-primary-300 hover:text-black dark:hover:text-white transition-colors group/btn"
                       >
                         <div className="p-1 rounded-full bg-primary-500/20 group-hover/btn:bg-primary-500 text-primary-600 dark:text-primary-400 group-hover/btn:text-white transition-all">

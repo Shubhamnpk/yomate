@@ -10,7 +10,7 @@ import {
 import { EditBlockModal } from './EditBlockModal';
 import {
   ArrowLeft, Palette, Layout, Calendar,
-  AlertOctagon, Milestone, Target
+  AlertOctagon, Milestone, Target, Info
 } from 'lucide-react';
 import { haptic } from '../services/hapticService';
 
@@ -20,6 +20,7 @@ import { StrategyTab } from './settings/StrategyTab';
 import { SubjectsTab } from './settings/SubjectsTab';
 import { ScheduleTab } from './settings/ScheduleTab';
 import { DataTab } from './settings/DataTab';
+import { AboutTab } from './settings/AboutTab';
 
 interface Props {
   onClose: () => void;
@@ -27,7 +28,7 @@ interface Props {
 }
 
 export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
-  const [activeTab, setActiveTab] = useState<'APPEARANCE' | 'STRATEGY' | 'SCHEDULE' | 'SUBJECTS' | 'DATA'>('APPEARANCE');
+  const [activeTab, setActiveTab] = useState<'APPEARANCE' | 'STRATEGY' | 'SCHEDULE' | 'SUBJECTS' | 'DATA' | 'ABOUT'>('APPEARANCE');
 
   // Data States
   const [template, setTemplate] = useState<ScheduleBlock[]>([]);
@@ -122,10 +123,11 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
         <div className="flex gap-2 p-1 bg-zinc-100 dark:bg-zinc-900 rounded-xl mb-6 overflow-x-auto no-scrollbar">
           {[
             { id: 'APPEARANCE', icon: Palette, label: 'Look' },
-            { id: 'STRATEGY', icon: Target, label: 'Strategy' },
+            { id: 'STRATEGY', icon: Target, label: 'Focus' },
             { id: 'SUBJECTS', icon: Layout, label: 'Subs' },
             { id: 'SCHEDULE', icon: Calendar, label: 'Plan' },
             { id: 'DATA', icon: AlertOctagon, label: 'Data' },
+            { id: 'ABOUT', icon: Info, label: 'Info' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -154,6 +156,7 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
         {activeTab === 'SUBJECTS' && <SubjectsTab subjects={subjects} setSubjects={setSubjects} />}
         {activeTab === 'SCHEDULE' && <ScheduleTab template={template} setEditingBlockId={setEditingBlockId} />}
         {activeTab === 'DATA' && <DataTab />}
+        {activeTab === 'ABOUT' && <AboutTab />}
       </div>
     </div>
   );

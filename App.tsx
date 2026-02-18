@@ -1,10 +1,11 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { initializeToday, getStoredLog, getAppSettings, resetApp, saveLog } from './services/storageService';
+import { initializeToday, getStoredLog, getAppSettings, resetApp, saveLog, saveAppSettings } from './services/storageService';
 import { DayLog, ViewState, AppSettings } from './types';
 import { getCurrentTime24 } from './services/timeService';
-import { initializeAudio } from './services/audioGen';
+import { initializeAudio, playAscensionSound } from './services/audioGen';
 import { haptic } from './services/hapticService';
+import { sendTimerNotification, sendSleepReminder } from './services/notificationService';
 import { Navigation } from './components/Navigation';
 import { Timetable } from './components/Timetable';
 import { DeepWork } from './components/DeepWork';
@@ -12,7 +13,7 @@ import { NightRoutine } from './components/NightRoutine';
 import { StatsView } from './components/StatsView';
 import { NotesView } from './components/NotesView';
 import { Onboarding } from './components/Onboarding';
-import { Moon, AlertTriangle, Terminal, X, RotateCcw, Move, Zap, Smartphone, CheckCircle2 } from 'lucide-react';
+import { Moon, AlertTriangle, Terminal, X, RotateCcw, Move, Zap, Smartphone, CheckCircle2, Bell, Sparkles, UserCheck, Palette, Flame } from 'lucide-react';
 
 // Map of accent names to RGB values for Tailwind variable injection
 const ACCENT_COLORS: Record<string, string> = {
@@ -68,16 +69,16 @@ const GlobalSleepHUD: React.FC<SleepHUDProps> = ({ currentTime }) => {
     <>
       {/* Visual Alarm for Danger Mode */}
       {isDanger && (
-        <div className="fixed inset-0 z-[55] pointer-events-none border-[6px] border-rose-500/50 animate-pulse inset-shadow-lg">
-          <div className="absolute inset-0 bg-rose-500/5"></div>
+        <div className="fixed inset-0 z-[55] pointer-events-none border-[12px] border-rose-500/20 animate-pulse inset-shadow-xl">
+          <div className="absolute inset-0 bg-gradient-to-t from-rose-500/10 to-transparent"></div>
         </div>
       )}
 
-      <div className={`fixed top-0 left-0 right-0 z-[60] flex justify-center pointer-events-none transition-all duration-500 ${isDanger ? 'translate-y-2' : 'translate-y-0'}`}>
-        <div className={`mt-2 px-4 py-2 rounded-full shadow-2xl backdrop-blur-md flex items-center gap-3 border pointer-events-auto animate-in slide-in-from-top duration-500
+      <div className={`fixed top-0 left-0 right-0 z-[60] flex justify-center pointer-events-none transition-all duration-700 ${isDanger ? 'translate-y-4' : 'translate-y-2'}`}>
+        <div className={`px-5 py-2.5 rounded-full shadow-2xl backdrop-blur-3xl flex items-center gap-4 border tech-border pointer-events-auto animate-in slide-in-from-top duration-700
           ${isDanger
-            ? 'bg-rose-950/90 border-rose-500 text-rose-200 animate-[shake_0.5s_ease-in-out_infinite]'
-            : 'bg-amber-950/90 border-amber-500/50 text-amber-200'}`}>
+            ? 'bg-rose-950/80 border-rose-500/50 text-rose-100 glow-rose animate-shake'
+            : 'bg-zinc-950/80 border-amber-500/30 text-amber-200 glow-amber'}`}>
 
           <div className={`p-1.5 rounded-full ${isDanger ? 'bg-rose-500/20' : 'bg-amber-500/20'}`}>
             {isDanger ? <AlertTriangle size={14} className="animate-pulse" /> : <Moon size={14} />}
@@ -142,7 +143,7 @@ const DebugConsole: React.FC<{
 
   return (
     <div
-      className="fixed z-[100] w-72 bg-black/90 border border-zinc-800 rounded-xl shadow-2xl backdrop-blur-md overflow-hidden animate-in zoom-in-95"
+      className="fixed z-[100] w-72 glass-morphism border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 tech-border"
       style={{ left: position.x, top: position.y }}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -186,6 +187,55 @@ const DebugConsole: React.FC<{
           </div>
         </div>
 
+        {/* System & FX */}
+        <div>
+          <label className="text-[9px] font-bold text-zinc-500 uppercase block mb-2 tracking-wider">System & Effects</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => {
+                haptic.notification();
+                sendTimerNotification('Yomate | Test Notification', 'This is a system diagnostic check.', 'success');
+              }}
+              className="py-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded text-[10px] font-bold flex items-center justify-center gap-2 hover:bg-indigo-500/20"
+            >
+              <Bell size={12} /> Test Notify
+            </button>
+            <button
+              onClick={() => {
+                playAscensionSound();
+                // @ts-ignore
+                import('https://esm.sh/canvas-confetti').then(m => m.default({ particleCount: 100, spread: 70, origin: { y: 0.6 } }));
+              }}
+              className="py-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded text-[10px] font-bold flex items-center justify-center gap-2 hover:bg-amber-500/20"
+            >
+              <Sparkles size={12} /> Burst FX
+            </button>
+            <button
+              onClick={() => {
+                const s = getAppSettings();
+                saveAppSettings({ ...s, onboarded: !s.onboarded });
+                onRefresh();
+                window.location.reload();
+              }}
+              className="py-2 bg-zinc-800 border border-zinc-700 text-zinc-300 rounded text-[10px] font-bold flex items-center justify-center gap-2 hover:bg-zinc-700"
+            >
+              <UserCheck size={12} /> Reset Onboard
+            </button>
+            <button
+              onClick={() => {
+                const accents = Object.keys(ACCENT_COLORS);
+                const current = getAppSettings().themeAccent;
+                const next = accents[(accents.indexOf(current) + 1) % accents.length] as AppSettings['themeAccent'];
+                saveAppSettings({ ...getAppSettings(), themeAccent: next });
+                onRefresh();
+              }}
+              className="py-2 bg-zinc-800 border border-zinc-700 text-zinc-300 rounded text-[10px] font-bold flex items-center justify-center gap-2 hover:bg-zinc-700"
+            >
+              <Palette size={12} /> Next Accent
+            </button>
+          </div>
+        </div>
+
         {/* State Injection */}
         <div>
           <label className="text-[9px] font-bold text-zinc-500 uppercase block mb-2 tracking-wider">State Injection</label>
@@ -195,6 +245,25 @@ const DebugConsole: React.FC<{
               className="w-full py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded text-[10px] font-bold flex items-center justify-center gap-2 hover:bg-emerald-500/20"
             >
               <Zap size={12} /> Add 1hr Deep Work
+            </button>
+            <button
+              onClick={() => {
+                const logs = getStoredLog();
+                const today = new Date();
+                // Inject logs for last 5 days
+                for (let i = 1; i <= 5; i++) {
+                  const d = new Date(today);
+                  d.setDate(today.getDate() - i);
+                  const dStr = d.toISOString().split('T')[0];
+                  // @ts-ignore
+                  logs[dStr] = { ...initializeToday(true), deepWorkMinutes: 60 };
+                }
+                localStorage.setItem('youmeet_data_v5', JSON.stringify(logs));
+                onRefresh();
+              }}
+              className="w-full py-2 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded text-[10px] font-bold flex items-center justify-center gap-2 hover:bg-orange-500/20"
+            >
+              <Flame size={12} /> Force 5 Day Streak
             </button>
             <button
               onClick={() => modifyLog({ phoneViolations: 5 })}
@@ -232,6 +301,7 @@ const App: React.FC = () => {
   const [dayLog, setDayLog] = useState<DayLog | null>(null);
   const [settings, setSettings] = useState<AppSettings>(getAppSettings());
   const [initialFocusTask, setInitialFocusTask] = useState<string>('');
+  const [scheduledEnd, setScheduledEnd] = useState<string | null>(null);
 
   // Swipe Navigation State
   const touchStart = useRef<number | null>(null);
@@ -325,28 +395,21 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Window Controls Overlay (WCO) Logic
-    if ('windowControlsOverlay' in navigator) {
-      const wco = (navigator as any).windowControlsOverlay;
-
-      const handleGeometryChange = (e: any) => {
-        // We can react to geometry changes here if needed
-        // For now, CSS env variables handle the positioning
-        console.log('WCO Geometry Changed:', e.titlebarAreaRect);
-      };
-
-      wco.addEventListener('geometrychange', handleGeometryChange);
-      return () => wco.removeEventListener('geometrychange', handleGeometryChange);
-    }
-  }, []);
-
-  useEffect(() => {
     // Apply Dark Mode Class logic based on setting
     if (settings.themeMode === 'light') {
       document.documentElement.classList.remove('dark');
     } else {
       document.documentElement.classList.add('dark');
     }
+
+    // Sync theme-color meta tag with background
+    const themeColor = {
+      zinc: '#09090b',
+      black: '#000000',
+      light: '#fafafa'
+    }[settings.themeMode] || '#09090b';
+
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor);
   }, [settings.themeMode]);
 
   const refreshLog = () => {
@@ -370,8 +433,10 @@ const App: React.FC = () => {
     // Listen for Quick Focus navigation
     const handleFocusNav = (e: any) => {
       const task = e.detail?.task;
+      const end = e.detail?.scheduledEnd;
       if (task) {
         setInitialFocusTask(task);
+        setScheduledEnd(end || null);
         setView('FOCUS');
       }
     };
@@ -383,26 +448,32 @@ const App: React.FC = () => {
 
   // Determine styles
   const themeBg = {
-    zinc: 'bg-zinc-950',
+    zinc: 'bg-black', // Standardize to true black for techy contrast
     black: 'bg-black',
     light: 'bg-zinc-50'
-  }[settings.themeMode] || 'bg-zinc-950';
+  }[settings.themeMode] || 'bg-black';
 
   const primaryRgb = ACCENT_COLORS[settings.themeAccent] || ACCENT_COLORS['indigo'];
 
   return (
     <div
-      className={`h-[100dvh] w-full ${themeBg} text-zinc-900 dark:text-zinc-200 font-sans selection:bg-primary-500/30 overflow-hidden flex flex-col relative transition-colors duration-500`}
-      style={{ '--primary': primaryRgb } as React.CSSProperties}
+      className={`h-[100dvh] w-full ${themeBg} text-zinc-900 dark:text-zinc-200 font-sans selection:bg-primary-500/30 overflow-hidden flex flex-col relative transition-colors duration-700`}
+      style={{ '--primary': primaryRgb, '--primary-rgb': primaryRgb } as React.CSSProperties}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
+      {/* Background Decorative Layer */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-40">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary-500/10 blur-[120px] rounded-full animate-pulse-soft"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-500/10 blur-[120px] rounded-full animate-pulse-soft " style={{ animationDelay: '1.5s' }}></div>
+        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
+      </div>
+
       {!settings.onboarded ? (
         <Onboarding onComplete={refreshApp} settings={settings} />
       ) : (
         <>
-          <div className="pwa-titlebar" />
           <GlobalSleepHUD currentTime={effectiveTime} />
 
           <DebugConsole
@@ -414,7 +485,7 @@ const App: React.FC = () => {
             onRefresh={refreshLog}
           />
 
-          <div className={`w-full max-w-md mx-auto h-full flex flex-col relative ${themeBg} shadow-2xl pt-wco`}>
+          <div className={`w-full max-w-md mx-auto h-full flex flex-col relative ${themeBg} shadow-2xl`}>
 
             {/* Main Content Area */}
             <main className="flex-1 overflow-y-auto scroll-smooth pb-safe no-scrollbar">
@@ -427,7 +498,14 @@ const App: React.FC = () => {
                 />
               )}
               {currentView === 'NOTES' && <NotesView log={dayLog} refreshLog={refreshLog} />}
-              {currentView === 'FOCUS' && <DeepWork log={dayLog} refreshLog={refreshLog} initialTask={initialFocusTask} />}
+              {currentView === 'FOCUS' && (
+                <DeepWork
+                  log={dayLog}
+                  refreshLog={refreshLog}
+                  initialTask={initialFocusTask}
+                  scheduledEnd={scheduledEnd}
+                />
+              )}
               {currentView === 'STATS' && <StatsView />}
               {currentView === 'NIGHT' && <NightRoutine log={dayLog} refreshLog={refreshLog} />}
             </main>
