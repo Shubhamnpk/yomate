@@ -57,7 +57,7 @@ const PrintLayout: React.FC<{
                     <p className="text-zinc-500 mt-2">
                         You dedicated <span className="font-bold text-zinc-900">
                             {current.metricType === 'minutes' ? `${Math.floor(current.maxVal / 60)}h ${current.maxVal % 60}m` : `${current.maxVal} sessions`}
-                        </span> to this subject.
+                        </span> to this subject
                     </p>
                 </div>
             </div>
