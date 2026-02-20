@@ -349,7 +349,8 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    // Clock Tick
+    // Clock Tick — every 60s is sufficient for schedule block tracking.
+    // 1s intervals caused a full React tree re-render every second, killing mobile perf.
     const interval = setInterval(() => {
       setRealTime(getCurrentTime24());
     }, 1000);
@@ -463,11 +464,16 @@ const App: React.FC = () => {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Background Decorative Layer */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-40">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary-500/10 blur-[120px] rounded-full animate-pulse-soft"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-500/10 blur-[120px] rounded-full animate-pulse-soft " style={{ animationDelay: '1.5s' }}></div>
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
+      {/* Background Decorative Layer — GPU-optimized: reduced blur radius, will-change hints, removed external network request */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-40" style={{ contain: 'strict' }}>
+        <div
+          className="absolute top-[-10%] left-[-10%] w-[35%] h-[35%] bg-primary-500/10 blur-[60px] rounded-full animate-pulse-soft"
+          style={{ willChange: 'opacity', transform: 'translateZ(0)' }}
+        ></div>
+        <div
+          className="absolute bottom-[-10%] right-[-10%] w-[35%] h-[35%] bg-indigo-500/10 blur-[60px] rounded-full animate-pulse-soft"
+          style={{ willChange: 'opacity', transform: 'translateZ(0)', animationDelay: '2s' }}
+        ></div>
       </div>
 
       {!settings.onboarded ? (

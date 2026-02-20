@@ -631,10 +631,13 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
         {zenMode ? <EyeOff size={24} /> : <Eye size={24} />}
       </button>
 
-      <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120vw] h-[120vw] blur-[120px] rounded-full pointer-events-none opacity-20 transition-all duration-1000
-        ${activeNoise !== 'off' ? `bg-${theme.accent}-900` : focusMode === 'DEEP' ? 'bg-primary-900' : 'bg-rose-900'}
-        ${zenMode ? 'opacity-5 scale-90' : 'opacity-20'}
-      `}>
+      <div
+        className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[70vw] h-[70vw] blur-[70px] rounded-full pointer-events-none transition-opacity duration-1000
+          ${activeNoise !== 'off' ? `bg-${theme.accent}-900` : focusMode === 'DEEP' ? 'bg-primary-900' : 'bg-rose-900'}
+          ${zenMode ? 'opacity-5' : 'opacity-20'}
+        `}
+        style={{ willChange: 'opacity', transform: 'translate(-50%, -50%) translateZ(0)' }}
+      >
       </div>
 
       <div className="relative z-10 w-full max-w-md px-6 flex flex-col items-center h-full justify-center">
@@ -689,7 +692,7 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
 
         {/* Timer Viz */}
         <div className="relative flex items-center justify-center pointer-events-none">
-          <div className={`animate-[pulse-slow_4s_ease-in-out_infinite] scale-90 sm:scale-100 transition-opacity duration-700 ${zenMode ? 'opacity-30' : 'opacity-100'}`}>
+          <div className={`transition-opacity duration-700 ${zenMode ? 'opacity-30' : 'opacity-100'}`}>
             <svg
               className="transform -rotate-90 w-[300px] h-[300px] sm:w-[340px] sm:h-[340px] drop-shadow-2xl"
               viewBox="0 0 320 320"
