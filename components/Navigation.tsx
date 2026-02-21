@@ -20,7 +20,7 @@ export const Navigation: React.FC<Props> = ({ currentView, setView }) => {
 
   return (
     <nav className="pointer-events-auto">
-      <div className="flex items-center gap-1 p-2 bg-zinc-100 dark:bg-zinc-900/90 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800/50 rounded-2xl shadow-2xl ring-1 ring-white/5">
+      <div className="flex items-center gap-1 p-2 bg-white/95 dark:bg-zinc-900/90 backdrop-blur-xl border border-zinc-300 dark:border-zinc-800/50 rounded-2xl shadow-xl dark:shadow-2xl ring-1 ring-zinc-200/60 dark:ring-white/5">
         {navItems.map((item) => {
           const isActive = currentView === item.id;
           const Icon = item.icon;
@@ -34,8 +34,8 @@ export const Navigation: React.FC<Props> = ({ currentView, setView }) => {
               }}
               className={`relative flex flex-col items-center justify-center w-14 h-14 rounded-xl transition-all duration-300 group active-scale
                 ${isActive
-                  ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]'
-                  : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
+                  ? 'bg-primary-500/12 dark:bg-zinc-800 text-primary-700 dark:text-white border border-primary-500/25 dark:border-transparent shadow-sm dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]'
+                  : 'text-zinc-600 hover:text-zinc-900 dark:hover:text-zinc-300 hover:bg-zinc-100/80 dark:hover:bg-transparent'
                 }`}
             >
               {isActive && (

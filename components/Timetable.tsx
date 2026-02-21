@@ -514,6 +514,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
           const minsLeft = active ? getTimeRemaining(block.endTime) : 0;
 
           const isFocusable = (block.mode === 'Study' || block.mode === 'Deep Work') && active;
+          const isMinimizedCompleted = block.isCompleted && !editMode && !active;
 
           // If Sleep Phase, dim everything
           const isDimmed = !active && isSleep;
@@ -525,7 +526,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
               ref={active ? activeBlockRef : null}
             >
               <div
-                className={`absolute -left-[9px] top-6 w-4 h-4 rounded-full border-4 transition-all duration-500 z-10
+                className={`absolute -left-[9px] ${isMinimizedCompleted ? 'top-4' : 'top-6'} w-4 h-4 rounded-full border-4 transition-all duration-500 z-10
                 ${active
                     ? 'bg-primary-500 border-white dark:border-zinc-950 shadow-[0_0_15px_rgb(var(--primary))] scale-110'
                     : block.isCompleted
@@ -541,7 +542,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
                     : active
                       ? 'bg-gradient-to-br from-white to-zinc-50 dark:from-zinc-900 dark:to-zinc-950 border-primary-500/30 shadow-lg shadow-primary-900/10 scale-[1.02] ring-1 ring-primary-500/20'
                       : block.isCompleted
-                        ? 'bg-zinc-100/50 dark:bg-zinc-900/30 border-zinc-200 dark:border-zinc-900 opacity-60 grayscale scale-[0.98]'
+                        ? 'bg-zinc-100/70 dark:bg-zinc-900/30 border-zinc-200 dark:border-zinc-900 opacity-75 scale-[0.98]'
                         : 'bg-white dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800/50 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900/80'}
                 `}
               >
@@ -552,45 +553,61 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
                   ></div>
                 )}
 
-                <div className="relative p-5">
+                <div className={`relative ${isMinimizedCompleted ? 'p-3' : 'p-5'}`}>
                   {editMode && (
                     <div className="absolute top-3 right-3 text-primary-400 opacity-50 group-hover/card:opacity-100">
                       <Pencil size={14} />
                     </div>
                   )}
 
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-1 rounded-md transition-colors
-                        ${block.mode === 'Deep Work' ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400' :
-                          block.mode === 'Study' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
-                            block.mode === 'Human' ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' :
-                              'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'}`}>
-                        {block.mode}
-                      </span>
-                      {active && (
-                        <span className="text-[10px] font-mono text-primary-600 dark:text-primary-400 font-bold animate-pulse">
-                          {minsLeft}m left
-                        </span>
-                      )}
-                    </div>
-
-                    <span className="font-mono text-xs text-zinc-500">
-                      {formatTo12h(block.startTime)} - {formatTo12h(block.endTime)}
-                    </span>
-                  </div>
-
-                  <div className="flex items-start justify-between gap-4">
-                    <h3 className={`font-display font-medium text-lg leading-snug transition-colors ${block.isCompleted && !editMode ? 'text-zinc-400 dark:text-zinc-500 line-through' : 'text-zinc-900 dark:text-zinc-200'}`}>
-                      {activityName}
-                    </h3>
-
-                    {!editMode && (
-                      <div className={`mt-1 transition-all duration-500 ${block.isCompleted ? 'text-emerald-500 scale-110' : 'text-zinc-300 dark:text-zinc-800 group-hover/card:text-zinc-400 dark:group-hover/card:text-zinc-700'}`}>
-                        {block.isCompleted ? <CheckCircle2 size={20} className="animate-in zoom-in spin-in-12 duration-300" /> : <Circle size={20} />}
+                  {isMinimizedCompleted ? (
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="font-display font-medium text-sm text-zinc-500 dark:text-zinc-500 line-through truncate">
+                          {activityName}
+                        </h3>
+                        <p className="font-mono text-[10px] text-zinc-500 mt-1">
+                          {formatTo12h(block.startTime)} - {formatTo12h(block.endTime)}
+                        </p>
                       </div>
-                    )}
-                  </div>
+                      <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-center mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-1 rounded-md transition-colors
+                            ${block.mode === 'Deep Work' ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400' :
+                              block.mode === 'Study' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
+                                block.mode === 'Human' ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' :
+                                  'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'}`}>
+                            {block.mode}
+                          </span>
+                          {active && (
+                            <span className="text-[10px] font-mono text-primary-600 dark:text-primary-400 font-bold animate-pulse">
+                              {minsLeft}m left
+                            </span>
+                          )}
+                        </div>
+
+                        <span className="font-mono text-xs text-zinc-500">
+                          {formatTo12h(block.startTime)} - {formatTo12h(block.endTime)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-start justify-between gap-4">
+                        <h3 className={`font-display font-medium text-lg leading-snug transition-colors ${block.isCompleted && !editMode ? 'text-zinc-400 dark:text-zinc-500 line-through' : 'text-zinc-900 dark:text-zinc-200'}`}>
+                          {activityName}
+                        </h3>
+
+                        {!editMode && (
+                          <div className={`mt-1 transition-all duration-500 ${block.isCompleted ? 'text-emerald-500 scale-110' : 'text-zinc-300 dark:text-zinc-800 group-hover/card:text-zinc-400 dark:group-hover/card:text-zinc-700'}`}>
+                            {block.isCompleted ? <CheckCircle2 size={20} className="animate-in zoom-in spin-in-12 duration-300" /> : <Circle size={20} />}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
 
                   {isFocusable && !block.isCompleted && !editMode && (
                     <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800/50 flex animate-in slide-in-from-top-2">

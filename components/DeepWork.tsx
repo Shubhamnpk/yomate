@@ -225,9 +225,17 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
   const saveQuickNote = () => {
     if (!quickNote.trim()) return;
     const currentLog = logRef.current;
+    const existing = currentLog.scratchpad || '';
+    const hasHtml = /<\/?[a-z][\s\S]*>/i.test(existing);
+    const safeNote = quickNote
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
     const newLog = {
       ...currentLog,
-      scratchpad: currentLog.scratchpad ? `${currentLog.scratchpad}\n- [DeepWork] ${quickNote}` : `- [DeepWork] ${quickNote}`
+      scratchpad: hasHtml
+        ? `${existing}<p>[DeepWork] ${safeNote}</p>`
+        : (existing ? `${existing}\n- [DeepWork] ${quickNote}` : `- [DeepWork] ${quickNote}`)
     };
     saveLog(currentLog.date, newLog);
     refreshLog();
