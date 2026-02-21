@@ -159,7 +159,7 @@ const DebugConsole: React.FC<{
         </div>
         <div className="flex items-center gap-2">
           <Move size={12} className="text-zinc-600" />
-          <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={14} /></button>
+          <button title="Close Debug Console" onClick={onClose} className="text-zinc-500 hover:text-white"><X size={14} /></button>
         </div>
       </div>
 
@@ -170,6 +170,7 @@ const DebugConsole: React.FC<{
           <div className="flex gap-2 mb-2">
             <input
               type="time"
+              title="Override Current Time"
               className="bg-zinc-900 border border-zinc-700 rounded p-1.5 text-white text-xs font-mono flex-1 outline-none focus:border-emerald-500"
               onChange={(e) => onOverrideTime(e.target.value)}
               value={currentTime}
@@ -310,6 +311,8 @@ const App: React.FC = () => {
   const [overrideTime, setOverrideTime] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const notifiedRef = useRef<Set<string>>(new Set());
+  const lastCheckedEffectiveRef = useRef<string | null>(null);
+  const lastNotifiedDateRef = useRef<string | null>(null);
 
   const effectiveTime = overrideTime || realTime;
   const primaryRgb = ACCENT_COLORS[settings.themeAccent] || ACCENT_COLORS['indigo'];
@@ -511,10 +514,22 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!dayLog) return;
     const dateKey = dayLog.date;
+
+    // Reset daily notifications when the day changes so new-day notifications can fire
+    if (lastNotifiedDateRef.current !== dateKey) {
+      notifiedRef.current = new Set();
+      lastNotifiedDateRef.current = dateKey;
+    }
+
     const [h, m] = effectiveTime.split(':').map(Number);
     const currentMins = h * 60 + m;
     const currentAdjusted = h < 5 ? (h + 24) * 60 + m : currentMins;
 
+    // Previous effective time (if any) used to detect crossings
+    const prevEffective = lastCheckedEffectiveRef.current;
+    const prevMins = prevEffective ? prevEffective.split(':').map(Number).reduce((acc, x, i) => acc + (i === 0 ? x * 60 : x), 0) : null;
+
+    // Schedule reminders: detect crossing into the "<=5 minutes remaining" window
     const sorted = [...dayLog.schedule].sort((a, b) => a.startTime.localeCompare(b.startTime));
     const nextBlock = sorted.find(b => b.startTime > effectiveTime) || sorted[0];
 
@@ -523,26 +538,52 @@ const App: React.FC = () => {
       let minsUntil = (bh * 60 + bm) - currentMins;
       if (minsUntil < 0) minsUntil += 24 * 60;
       const scheduleKey = `${dateKey}:schedule:${nextBlock.id}`;
-      if (minsUntil === 5 && !notifiedRef.current.has(scheduleKey)) {
-        sendScheduleReminder(nextBlock.activityName, 5);
+
+      // compute previous minsUntil to detect crossing (if we have a previous time)
+      let prevMinsUntil: number | null = null;
+      if (prevMins !== null) {
+        let p = (bh * 60 + bm) - prevMins;
+        if (p < 0) p += 24 * 60;
+        prevMinsUntil = p;
+      }
+
+      // Fire when we crossed into <=5 minutes remaining (but still >0)
+      if (minsUntil <= 5 && minsUntil > 0 && (prevMinsUntil === null ? true : prevMinsUntil > 5) && !notifiedRef.current.has(scheduleKey)) {
+        sendScheduleReminder(nextBlock.activityName, Math.max(1, Math.floor(minsUntil)));
         notifiedRef.current.add(scheduleKey);
       }
     }
 
+    // Sleep reminder: fire if we've entered the target window since last check
     const sleepKey = `${dateKey}:sleep30`;
-    if (currentAdjusted === 24 * 60 && !notifiedRef.current.has(sleepKey)) {
-      sendSleepReminder();
-      notifiedRef.current.add(sleepKey);
+    const intervalMins = 1; // interval used for tick (roughly 1 minute)
+    if (!notifiedRef.current.has(sleepKey)) {
+      const sleptWindowStart = 24 * 60; // 00:00 represented as 24*60 for adjusted comparison
+      const inCurrentWindow = currentAdjusted >= sleptWindowStart && currentAdjusted < sleptWindowStart + intervalMins;
+      const crossedIntoWindow = prevMins !== null && ((prevMins < sleptWindowStart && currentAdjusted >= sleptWindowStart) || (prevMins >= sleptWindowStart && currentAdjusted >= sleptWindowStart && prevMins < currentAdjusted));
+      if ((inCurrentWindow || crossedIntoWindow) && !notifiedRef.current.has(sleepKey)) {
+        sendSleepReminder();
+        notifiedRef.current.add(sleepKey);
+      }
     }
 
+    // Ritual reminder: similar windowed check around 20:00
     const ritualKey = `${dateKey}:ritual`;
     const rituals = settings.rituals || [];
     const completed = new Set(dayLog.completedRituals || []);
     const pendingRitual = rituals.find(r => !completed.has(r));
-    if (currentMins === 20 * 60 && pendingRitual && !notifiedRef.current.has(ritualKey)) {
-      sendRitualReminder(pendingRitual);
-      notifiedRef.current.add(ritualKey);
+    if (pendingRitual && !notifiedRef.current.has(ritualKey)) {
+      const ritualWindowStart = 20 * 60;
+      const inRitualWindow = currentMins >= ritualWindowStart && currentMins < ritualWindowStart + intervalMins;
+      const crossedRitual = prevMins !== null && prevMins < ritualWindowStart && currentMins >= ritualWindowStart;
+      if (inRitualWindow || crossedRitual) {
+        sendRitualReminder(pendingRitual);
+        notifiedRef.current.add(ritualKey);
+      }
     }
+
+    // Remember last checked effective time for next tick
+    lastCheckedEffectiveRef.current = effectiveTime;
   }, [effectiveTime, dayLog, settings.rituals]);
 
   const refreshLog = useCallback(() => {

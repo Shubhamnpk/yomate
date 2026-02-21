@@ -58,12 +58,23 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
     subjects.forEach(s => counts[s.id] = 0);
 
     history.forEach(day => {
-      if (day.selectedSubjects.main1) counts[day.selectedSubjects.main1] = (counts[day.selectedSubjects.main1] || 0) + 1;
-      if (day.selectedSubjects.main2) counts[day.selectedSubjects.main2] = (counts[day.selectedSubjects.main2] || 0) + 1;
-      if (day.selectedSubjects.light) counts[day.selectedSubjects.light] = (counts[day.selectedSubjects.light] || 0) + 0.5;
+      const uniqueIds = Array.from(new Set([
+        day.selectedSubjects.main1,
+        day.selectedSubjects.main2,
+        day.selectedSubjects.light,
+        ...(day.additionalSubjects || []),
+      ].filter(Boolean) as string[]));
+      uniqueIds.forEach(id => {
+        counts[id] = (counts[id] || 0) + 1;
+      });
     });
 
-    const currentSelection = [dayLog.selectedSubjects.main1, dayLog.selectedSubjects.main2, dayLog.selectedSubjects.light];
+    const currentSelection = Array.from(new Set([
+      dayLog.selectedSubjects.main1,
+      dayLog.selectedSubjects.main2,
+      dayLog.selectedSubjects.light,
+      ...(dayLog.additionalSubjects || []),
+    ].filter(Boolean) as string[]));
 
     const ranked = subjects
       .filter(s => !currentSelection.includes(s.id))

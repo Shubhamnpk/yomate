@@ -118,11 +118,16 @@ export const WeeklyReport: React.FC<Props> = ({ onClose }) => {
                 });
             }
 
-            // Fallback Counts (Old System)
-            const { main1, main2, light } = l.selectedSubjects;
-            if (main1) subjectCounts[main1] = (subjectCounts[main1] || 0) + 1;
-            if (main2) subjectCounts[main2] = (subjectCounts[main2] || 0) + 1;
-            if (light) subjectCounts[light] = (subjectCounts[light] || 0) + 0.5;
+            // Fallback Counts (Old System + additional subjects)
+            const uniqueIds = Array.from(new Set([
+                l.selectedSubjects.main1,
+                l.selectedSubjects.main2,
+                l.selectedSubjects.light,
+                ...(l.additionalSubjects || []),
+            ].filter(Boolean) as string[]));
+            uniqueIds.forEach(id => {
+                subjectCounts[id] = (subjectCounts[id] || 0) + 1;
+            });
         });
 
         // Determine Top Subject
@@ -221,7 +226,7 @@ export const WeeklyReport: React.FC<Props> = ({ onClose }) => {
                             >
                                 <Download size={20} />
                             </button>
-                            <button onClick={onClose} className="p-2 bg-black/20 hover:bg-black/40 rounded-full text-white transition-colors">
+                            <button title="Close Report" onClick={onClose} className="p-2 bg-black/20 hover:bg-black/40 rounded-full text-white transition-colors">
                                 <X size={20} />
                             </button>
                         </div>

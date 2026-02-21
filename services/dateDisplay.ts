@@ -163,7 +163,7 @@ export const parseNepaliDateRange = (rangeStr: string): { start: Date; end: Date
 
     if (/^\d{4}$/.test(lastPart)) {
       year = Number.parseInt(lastPart, 10);
-      rangePart = cleanRange.replace(lastPart, '').trim();
+      rangePart = cleanRange.slice(0, cleanRange.lastIndexOf(lastPart)).trim();
     } else {
       year = new NepaliDate().getYear();
     }

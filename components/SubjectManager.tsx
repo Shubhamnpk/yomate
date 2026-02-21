@@ -15,6 +15,18 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [recommendations, setRecommendations] = useState<{ subject: Subject, count: number }[]>([]);
   const [appMode, setAppMode] = useState<AppMode>('Normal');
+  const selectedInSlots = [log.selectedSubjects.main1, log.selectedSubjects.main2, log.selectedSubjects.light].filter(Boolean) as string[];
+  const additionalSelected = log.additionalSubjects || [];
+
+  const getUniqueSubjectIdsForDay = (day: DayLog) => {
+    const ids = [
+      day.selectedSubjects.main1,
+      day.selectedSubjects.main2,
+      day.selectedSubjects.light,
+      ...(day.additionalSubjects || []),
+    ].filter(Boolean) as string[];
+    return Array.from(new Set(ids));
+  };
 
   useEffect(() => {
     const allSubjects = getCustomSubjects();
@@ -28,13 +40,12 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
     allSubjects.forEach(s => counts[s.id] = 0);
 
     history.forEach(day => {
-      if (day.selectedSubjects.main1) counts[day.selectedSubjects.main1] = (counts[day.selectedSubjects.main1] || 0) + 1;
-      if (day.selectedSubjects.main2) counts[day.selectedSubjects.main2] = (counts[day.selectedSubjects.main2] || 0) + 1;
-      // Light counts as 0.5 study unit
-      if (day.selectedSubjects.light) counts[day.selectedSubjects.light] = (counts[day.selectedSubjects.light] || 0) + 0.5;
+      getUniqueSubjectIdsForDay(day).forEach(id => {
+        counts[id] = (counts[id] || 0) + 1;
+      });
     });
 
-    const currentSelection = [log.selectedSubjects.main1, log.selectedSubjects.main2, log.selectedSubjects.light];
+    const currentSelection = getUniqueSubjectIdsForDay(log);
 
     const ranked = allSubjects
       .filter(s => !currentSelection.includes(s.id)) // Don't recommend what's already picked today
@@ -52,6 +63,19 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
   const handleSelect = (slot: 'main1' | 'main2' | 'light', subjectId: string) => {
     const newLog = { ...log };
     newLog.selectedSubjects[slot] = subjectId === newLog.selectedSubjects[slot] ? null : subjectId;
+    if (subjectId && (newLog.additionalSubjects || []).includes(subjectId)) {
+      newLog.additionalSubjects = (newLog.additionalSubjects || []).filter(id => id !== subjectId);
+    }
+    saveLog(log.date, newLog);
+    refreshLog();
+  };
+
+  const handleAdditionalToggle = (subjectId: string) => {
+    if (selectedInSlots.includes(subjectId)) return;
+    const current = new Set(log.additionalSubjects || []);
+    if (current.has(subjectId)) current.delete(subjectId);
+    else current.add(subjectId);
+    const newLog = { ...log, additionalSubjects: Array.from(current) };
     saveLog(log.date, newLog);
     refreshLog();
   };
@@ -63,11 +87,8 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
     else if (!log.selectedSubjects.main2) slot = 'main2';
     else if (!log.selectedSubjects.light) slot = 'light';
 
-    if (slot) {
-      handleSelect(slot, subjectId);
-    } else {
-      alert("All slots are full. Please clear a slot (Main 1, Main 2, or Light) to add this subject.");
-    }
+    if (slot) handleSelect(slot, subjectId);
+    else handleAdditionalToggle(subjectId);
   };
 
   return (
@@ -163,6 +184,35 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
                   <BookOpen />
                 </div>
               </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-zinc-500 uppercase mb-2 block tracking-widest">Additional Subjects (Multi)</label>
+              <div className="flex flex-wrap gap-2">
+                {subjects.map(s => {
+                  const isDisabled = selectedInSlots.includes(s.id);
+                  const isSelected = additionalSelected.includes(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      disabled={isDisabled}
+                      onClick={() => { haptic.light(); handleAdditionalToggle(s.id); }}
+                      className={`px-3 py-2 rounded-xl border text-xs font-semibold transition-all active-scale
+                        ${isDisabled
+                          ? 'bg-zinc-950 border-zinc-900 text-zinc-600 cursor-not-allowed'
+                          : isSelected
+                            ? 'bg-primary-600/20 border-primary-500/40 text-primary-300'
+                            : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'}`}
+                    >
+                      {s.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-zinc-500 mt-2">
+                Additional subjects are recognized once per day in analytics.
+              </p>
             </div>
           </div>
 

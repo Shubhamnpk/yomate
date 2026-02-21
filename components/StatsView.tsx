@@ -54,10 +54,16 @@ export const StatsView: React.FC = React.memo(() => {
     subjects.forEach(s => counts[s.id] = 0);
 
     history.forEach(log => {
-      const { main1, main2, light } = log.selectedSubjects;
-      if (main1) { counts[main1] = (counts[main1] || 0) + 1; touchedSubjects.add(main1); }
-      if (main2) { counts[main2] = (counts[main2] || 0) + 1; touchedSubjects.add(main2); }
-      if (light) { counts[light] = (counts[light] || 0) + 0.5; touchedSubjects.add(light); }
+      const uniqueIds = Array.from(new Set([
+        log.selectedSubjects.main1,
+        log.selectedSubjects.main2,
+        log.selectedSubjects.light,
+        ...(log.additionalSubjects || []),
+      ].filter(Boolean) as string[]));
+      uniqueIds.forEach(id => {
+        counts[id] = (counts[id] || 0) + 1;
+        touchedSubjects.add(id);
+      });
     });
 
     return {
@@ -116,7 +122,7 @@ export const StatsView: React.FC = React.memo(() => {
       return 1;
     };
 
-    type LogLike = Pick<DayLog, 'selectedSubjects' | 'subjectMinutes'>;
+    type LogLike = Pick<DayLog, 'selectedSubjects' | 'subjectMinutes' | 'additionalSubjects'>;
 
     const getSubjectCountForDay = (log: LogLike) => {
       const subjects = new Set<string>();
@@ -124,6 +130,7 @@ export const StatsView: React.FC = React.memo(() => {
       if (main1) subjects.add(main1);
       if (main2) subjects.add(main2);
       if (light) subjects.add(light);
+      (log.additionalSubjects || []).forEach(id => subjects.add(id));
       Object.entries((log.subjectMinutes || {}) as Record<string, number>).forEach(([id, mins]) => {
         if ((mins || 0) > 0) subjects.add(id);
       });
@@ -134,6 +141,7 @@ export const StatsView: React.FC = React.memo(() => {
       const fromMinutes = (log.subjectMinutes || {})[subjectId] || 0;
       if (fromMinutes > 0) return fromMinutes;
       const { main1, main2, light } = log.selectedSubjects;
+      if ((log.additionalSubjects || []).includes(subjectId)) return 30;
       if (main1 === subjectId || main2 === subjectId || light === subjectId) return 30;
       return 0;
     };
@@ -268,20 +276,20 @@ export const StatsView: React.FC = React.memo(() => {
       {/* Hero Stats */}
       <div className="grid grid-cols-2 gap-3">
         {/* Coverage Card */}
-        <div className="col-span-2 bg-gradient-to-r from-zinc-800 to-zinc-900 border border-zinc-700 p-5 rounded-2xl flex items-center justify-between shadow-lg">
+        <div className="col-span-2 bg-gradient-to-r from-zinc-100 to-white dark:from-zinc-800 dark:to-zinc-900 border border-zinc-200 dark:border-zinc-700 p-5 rounded-2xl flex items-center justify-between shadow-lg">
           <div>
-            <div className="flex items-center gap-2 text-emerald-400 mb-2">
+            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-2">
               <GraduationCap size={16} />
               <span className="text-xs font-bold uppercase tracking-wider">Exam Readiness</span>
             </div>
-            <p className="text-3xl font-mono font-bold text-white">{subjectStats.coverage}%</p>
-            <p className="text-xs text-zinc-400 mt-1">Subjects studied (14 Days)</p>
+            <p className="text-3xl font-mono font-bold text-zinc-900 dark:text-white">{subjectStats.coverage}%</p>
+            <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">Subjects studied (14 Days)</p>
           </div>
 
           {/* Mini Pie Visual */}
-          <div className="w-16 h-16 rounded-full border-4 border-zinc-800 relative flex items-center justify-center">
+          <div className="w-16 h-16 rounded-full border-4 border-zinc-200 dark:border-zinc-800 relative flex items-center justify-center">
             <div className="absolute inset-0 rounded-full border-4 border-emerald-500" style={{ clipPath: `inset(0 ${100 - subjectStats.coverage}% 0 0)` }}></div>
-            <span className="text-xs font-bold text-zinc-400">{subjects.length}</span>
+            <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400">{subjects.length}</span>
           </div>
         </div>
 
@@ -306,13 +314,13 @@ export const StatsView: React.FC = React.memo(() => {
 
       {/* AI Coach Insight */}
       <div className={`p-5 rounded-[2rem] border animate-in slide-in-from-top-2 duration-700 shadow-sm
-        ${aiInsight.type === 'warning' ? 'bg-rose-500/10 border-rose-500/20 text-rose-300' :
-          aiInsight.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' :
-            aiInsight.type === 'info' ? 'bg-blue-500/10 border-blue-500/20 text-blue-300' :
-              'bg-primary-500/10 border-primary-500/20 text-primary-300'}
+        ${aiInsight.type === 'warning' ? 'bg-rose-500/10 border-rose-500/20 text-rose-700 dark:text-rose-300' :
+          aiInsight.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300' :
+            aiInsight.type === 'info' ? 'bg-blue-500/10 border-blue-500/20 text-blue-700 dark:text-blue-300' :
+              'bg-primary-500/10 border-primary-500/20 text-primary-700 dark:text-primary-300'}
       `}>
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-8 h-8 rounded-full bg-black/40 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full bg-white/60 dark:bg-black/40 flex items-center justify-center">
             <Sparkles size={16} />
           </div>
           <span className="text-[10px] font-bold uppercase tracking-[0.2em]">AI Mentor Insights</span>
@@ -325,9 +333,9 @@ export const StatsView: React.FC = React.memo(() => {
       {/* Upcoming Deadlines Widget */}
       {upcomingDeadlines.length > 0 && (
         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
-          <h3 className="text-sm font-bold text-zinc-400 mb-4 uppercase tracking-wider flex items-center gap-2">
-            <Flag size={14} /> Upcoming Horizon
-          </h3>
+        <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 mb-4 uppercase tracking-wider flex items-center gap-2">
+          <Flag size={14} /> Upcoming Horizon
+        </h3>
           <div className="space-y-3">
             {upcomingDeadlines.slice(0, 3).map(deadline => {
               const daysLeft = Math.ceil((new Date(deadline.date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
@@ -353,7 +361,7 @@ export const StatsView: React.FC = React.memo(() => {
       )}
 
       <div className="bg-zinc-100 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
-        <h3 className="text-sm font-bold text-zinc-400 mb-6 uppercase tracking-wider">Consistency (7 Days)</h3>
+        <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 mb-6 uppercase tracking-wider">Consistency (7 Days)</h3>
         <div className="flex items-end justify-between h-32 gap-2">
           {last7Days.map((log, idx) => {
             const height = Math.min((log.deepWorkMinutes / 120) * 100, 100);
@@ -377,7 +385,7 @@ export const StatsView: React.FC = React.memo(() => {
 
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+          <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-2">
             <CalendarDays size={14} /> Focus Heatmap
           </h3>
           <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1">
@@ -516,7 +524,7 @@ export const StatsView: React.FC = React.memo(() => {
       </div>
 
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
-        <h3 className="text-sm font-bold text-zinc-400 mb-4 uppercase tracking-wider flex items-center gap-2">
+        <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 mb-4 uppercase tracking-wider flex items-center gap-2">
           <Trophy size={14} /> Milestones
         </h3>
         {todayAchievements.length === 0 ? (
@@ -526,7 +534,7 @@ export const StatsView: React.FC = React.memo(() => {
             {todayAchievements.map(ach => (
               <div key={ach.id} className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-3">
                 <Trophy size={14} className="text-emerald-400" />
-                <span className="text-sm text-zinc-200">{ach.label}</span>
+                <span className="text-sm text-zinc-800 dark:text-zinc-200">{ach.label}</span>
               </div>
             ))}
           </div>
@@ -534,7 +542,7 @@ export const StatsView: React.FC = React.memo(() => {
       </div>
 
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
-        <h3 className="text-sm font-bold text-zinc-400 mb-4 uppercase tracking-wider">Session History</h3>
+        <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 mb-4 uppercase tracking-wider">Session History</h3>
         {sessionInsights.bestHour !== null && (
           <p className="text-xs text-zinc-500 mb-3">
             Best focus hour: <span className="text-zinc-900 dark:text-white font-semibold">{sessionInsights.bestHour}:00</span>
@@ -561,7 +569,7 @@ export const StatsView: React.FC = React.memo(() => {
       </div>
 
       <div className="space-y-4">
-        <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider">Subject Heatmap (14 Days)</h3>
+        <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Subject Heatmap (14 Days)</h3>
         <div className="space-y-2">
           {subjectStats.sorted.map(([id, count]) => {
             const subject = subjects.find(s => s.id === id);
@@ -591,5 +599,3 @@ export const StatsView: React.FC = React.memo(() => {
     </div>
   );
 });
-
-

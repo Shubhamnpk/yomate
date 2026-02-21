@@ -48,6 +48,7 @@ export interface DayLog {
     main2: string | null;
     light: string | null;
   };
+  additionalSubjects?: string[]; // Extra subjects selected for today (counted once per day)
   schedule: ScheduleBlock[];
   deepWorkMinutes: number;
   phoneViolations: number; // "In hand" selections

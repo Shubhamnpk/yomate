@@ -14,10 +14,13 @@ let logCache: Record<string, DayLog> | null = null;
 let logSaveTimer: number | null = null;
 
 const persistLogsNow = () => {
+  if (logCache === null) {
+    logSaveTimer = null;
+    return;
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(logCache || {}));
   logSaveTimer = null;
 };
-
 const scheduleLogPersist = () => {
   if (logSaveTimer) {
     window.clearTimeout(logSaveTimer);
@@ -45,7 +48,8 @@ export const getTodayDateString = (): string => {
 };
 
 const getDateDaysAgo = (dateStr: string, daysAgo: number): string => {
-  const d = new Date(dateStr);
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const d = new Date(year, month - 1, day);
   d.setDate(d.getDate() - daysAgo);
   return d.toISOString().split('T')[0];
 };
@@ -267,6 +271,7 @@ export const saveLog = (date: string, data: DayLog) => {
   const settings = getAppSettings();
   const merged: DayLog = {
     ...data,
+    additionalSubjects: data.additionalSubjects || [],
     focusSessions: data.focusSessions || [],
     unlockedAchievements: data.unlockedAchievements || [],
   };
@@ -304,6 +309,10 @@ export const initializeToday = (dryRun = false): DayLog => {
       logs[date].unlockedAchievements = [];
       saveLog(date, logs[date]);
     }
+    if (!logs[date].additionalSubjects) {
+      logs[date].additionalSubjects = [];
+      saveLog(date, logs[date]);
+    }
     return logs[date];
   }
 
@@ -331,6 +340,7 @@ export const initializeToday = (dryRun = false): DayLog => {
       main2: todaysPlan.main2,
       light: todaysPlan.light
     },
+    additionalSubjects: [],
     schedule: template,
     deepWorkMinutes: 0,
     phoneViolations: 0,
@@ -496,6 +506,7 @@ const initializeTodayForDate = (date: string): DayLog => {
       main2: todaysPlan.main2,
       light: todaysPlan.light
     },
+    additionalSubjects: [],
     schedule: template,
     deepWorkMinutes: 0,
     phoneViolations: 0,

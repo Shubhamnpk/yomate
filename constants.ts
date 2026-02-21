@@ -22,6 +22,7 @@ export const ALL_SUBJECTS: Subject[] = [
 
   // Coding
   { id: 'code1', name: 'Coding / Dev', category: 'Coding', priority: 'High' },
+  { id: 'other_read', name: 'Reading', category: 'Other', priority: 'Normal' },
 ];
 
 export const DEFAULT_SCHEDULE: ScheduleBlock[] = [

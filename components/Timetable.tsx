@@ -409,14 +409,14 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
       {activeFocusBlock && !activeFocusBlock.isCompleted && (
         <button
           onClick={(e) => handleQuickFocus(e, getRealActivityName(activeFocusBlock.activityName), activeFocusBlock.endTime)}
-          className="w-full mb-6 p-4 rounded-2xl border border-primary-500/30 bg-gradient-to-r from-primary-500/20 to-primary-500/5 hover:from-primary-500/30 hover:to-primary-500/10 transition-all shadow-lg shadow-primary-900/20 flex items-center justify-between"
+          className="w-full mb-6 p-4 rounded-2xl border border-primary-500/30 bg-gradient-to-r from-primary-500/15 to-white dark:to-primary-500/5 hover:from-primary-500/25 dark:hover:from-primary-500/30 hover:to-primary-500/10 transition-all shadow-lg shadow-primary-900/20 flex items-center justify-between"
         >
           <div className="text-left">
-            <p className="text-[10px] uppercase tracking-widest font-bold text-primary-300">Quick Start</p>
-            <p className="text-sm font-bold text-white">Launch focus for {getRealActivityName(activeFocusBlock.activityName)}</p>
-            <p className="text-[10px] text-zinc-400">Ends at {formatTo12h(activeFocusBlock.endTime)}</p>
+            <p className="text-[10px] uppercase tracking-widest font-bold text-primary-600 dark:text-primary-300">Quick Start</p>
+            <p className="text-sm font-bold text-zinc-900 dark:text-white">Launch focus for {getRealActivityName(activeFocusBlock.activityName)}</p>
+            <p className="text-[10px] text-zinc-600 dark:text-zinc-400">Ends at {formatTo12h(activeFocusBlock.endTime)}</p>
           </div>
-          <div className="flex items-center gap-2 text-primary-200">
+          <div className="flex items-center gap-2 text-primary-600 dark:text-primary-200">
             <Play size={16} className="fill-current" />
             <ChevronRight size={14} />
           </div>

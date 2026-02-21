@@ -87,7 +87,7 @@ export const BrainDump: React.FC<Props> = ({ log, onClose, refreshLog }) => {
                 placeholder="Quick task..."
                 className="flex-1 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-3 text-sm text-zinc-900 dark:text-white outline-none focus:border-amber-500 transition-all font-medium"
               />
-              <button type="submit" disabled={!newTodo.trim()} className="bg-zinc-900 dark:bg-white text-white dark:text-black p-3 rounded-xl active-scale" onClick={() => haptic.medium()}><Plus size={16} /></button>
+              <button title="Add Todo" type="submit" disabled={!newTodo.trim()} className="bg-zinc-900 dark:bg-white text-white dark:text-black p-3 rounded-xl active-scale" onClick={() => haptic.medium()}><Plus size={16} /></button>
             </form>
             <div className="overflow-y-auto space-y-1 pr-1 custom-scrollbar">
               {todos.map(t => (

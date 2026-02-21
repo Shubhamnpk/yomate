@@ -53,12 +53,18 @@ export const renderMarkdown = (content: string): React.ReactNode => {
           );
         } else {
           const txt = item.replace(/^[-*]\s+/, '');
-          listItems.push(<li key={`li-${i}`}>{renderInline(txt, `li-${i}`)}</li>);
+          listItems.push(
+            <li key={`li-${i}`} className="flex items-start gap-2">
+              <span className="mt-1 text-xs text-zinc-400">•</span>
+              <span>{renderInline(txt, `li-${i}`)}</span>
+            </li>
+          );
         }
         i++;
       }
+      const hasCheckboxes = listItems.length > 0;
       nodes.push(
-        <ul key={`ul-${i}`} className="list-disc pl-5 space-y-1 my-2">
+        <ul key={`ul-${i}`} className="list-none pl-5 space-y-1 my-2">
           {listItems}
         </ul>
       );

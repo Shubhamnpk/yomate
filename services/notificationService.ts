@@ -77,9 +77,10 @@ export const sendSleepReminder = () => {
 };
 
 export const sendScheduleReminder = (blockName: string, minutes: number) => {
+    const minuteLabel = minutes === 1 ? 'minute' : 'minutes';
     sendTimerNotification(
         'Yomate | Block Reminder',
-        `${blockName} starts in ${minutes} minutes.`,
+        `${blockName} starts in ${minutes} ${minuteLabel}.`,
         'info'
     );
 };

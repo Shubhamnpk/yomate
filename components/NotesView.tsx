@@ -31,14 +31,17 @@ export const NotesView: React.FC<Props> = React.memo(({ log, refreshLog }) => {
 
   useEffect(() => {
     const handleQuickNote = () => {
-      scratchpadRef.current?.focus();
-      const len = scratchpadRef.current?.value.length || 0;
-      scratchpadRef.current?.setSelectionRange(len, len);
+      setPreviewMarkdown(false);
+      // Defer focus to next tick after textarea mounts
+      setTimeout(() => {
+        scratchpadRef.current?.focus();
+        const len = scratchpadRef.current?.value.length || 0;
+        scratchpadRef.current?.setSelectionRange(len, len);
+      }, 0);
     };
     window.addEventListener('quick-note', handleQuickNote);
     return () => window.removeEventListener('quick-note', handleQuickNote);
   }, []);
-
   const handleAddTodo = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!newTodo.trim()) return;
@@ -96,6 +99,7 @@ export const NotesView: React.FC<Props> = React.memo(({ log, refreshLog }) => {
             />
             <button
               type="submit"
+              title="Add Task"
               disabled={!newTodo.trim()}
               className="bg-zinc-900 dark:bg-white text-white dark:text-black p-3 rounded-xl hover:opacity-90 disabled:opacity-50 transition-all active-scale"
               onClick={() => haptic.medium()}
@@ -125,6 +129,7 @@ export const NotesView: React.FC<Props> = React.memo(({ log, refreshLog }) => {
                 </button>
                 <button
                   onClick={() => { haptic.medium(); deleteTodo(todo.id); }}
+                  title="Delete Task"
                   className="text-zinc-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all px-2 active-scale"
                 >
                   <Trash2 size={16} />
