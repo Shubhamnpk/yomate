@@ -2,8 +2,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DayLog, TodoItem } from '../types';
 import { saveLog } from '../services/storageService';
-import { X, StickyNote, Trash2, Plus, CheckSquare, Square, Save } from 'lucide-react';
+import { X, StickyNote, Plus, CheckSquare, Square, Eye, EyeOff } from 'lucide-react';
 import { haptic } from '../services/hapticService';
+import { renderMarkdown } from '../services/markdown';
 
 interface Props {
   log: DayLog;
@@ -16,6 +17,7 @@ export const BrainDump: React.FC<Props> = ({ log, onClose, refreshLog }) => {
   const [newTodo, setNewTodo] = useState('');
   const [todos, setTodos] = useState<TodoItem[]>(log.todos || []);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [previewMarkdown, setPreviewMarkdown] = useState(false);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -58,12 +60,21 @@ export const BrainDump: React.FC<Props> = ({ log, onClose, refreshLog }) => {
             <StickyNote size={18} className="text-amber-500" />
             <h3 className="font-display">Brain Dump</h3>
           </div>
-          <button
-            onClick={() => { haptic.success(); handleSave(); }}
-            className="text-xs font-bold text-primary-600 dark:text-primary-400 hover:text-primary-700 active-scale"
-          >
-            Save & Close
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setPreviewMarkdown(prev => !prev)}
+              className="text-[10px] uppercase tracking-widest font-bold text-zinc-500 hover:text-zinc-300 flex items-center gap-1"
+            >
+              {previewMarkdown ? <EyeOff size={12} /> : <Eye size={12} />}
+              {previewMarkdown ? 'Edit' : 'Preview'}
+            </button>
+            <button
+              onClick={() => { haptic.success(); handleSave(); }}
+              className="text-xs font-bold text-primary-600 dark:text-primary-400 hover:text-primary-700 active-scale"
+            >
+              Save & Close
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -92,13 +103,19 @@ export const BrainDump: React.FC<Props> = ({ log, onClose, refreshLog }) => {
 
           {/* Text Section */}
           <div className="flex-1 p-4 bg-yellow-50 dark:bg-zinc-950/50 relative">
-            <textarea
-              ref={textareaRef}
-              className="w-full h-full bg-transparent resize-none outline-none text-zinc-800 dark:text-zinc-300 placeholder-zinc-400 dark:placeholder-zinc-600 leading-relaxed text-base font-medium"
-              placeholder="Dump your thoughts here..."
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-            />
+            {previewMarkdown ? (
+              <div className="w-full h-full overflow-y-auto pr-1 custom-scrollbar">
+                {content.trim() ? renderMarkdown(content) : <p className="text-zinc-400 text-sm">Nothing to preview yet.</p>}
+              </div>
+            ) : (
+              <textarea
+                ref={textareaRef}
+                className="w-full h-full bg-transparent resize-none outline-none text-zinc-800 dark:text-zinc-300 placeholder-zinc-400 dark:placeholder-zinc-600 leading-relaxed text-base font-medium"
+                placeholder="Dump your thoughts here... Use Markdown like # heading, - list, **bold**"
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+              />
+            )}
             <div className="absolute bottom-4 right-4 opacity-50 pointer-events-none">
               <StickyNote size={64} className="text-amber-500/10" />
             </div>

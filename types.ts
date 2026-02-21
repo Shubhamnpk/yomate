@@ -23,6 +23,17 @@ export interface TodoItem {
   completed: boolean;
 }
 
+export interface FocusSession {
+  id: string;
+  startAt: string; // ISO string
+  endAt: string; // ISO string
+  durationMinutes: number;
+  taskName: string;
+  noiseType: string;
+  mode: 'DEEP' | 'POMODORO';
+  phoneViolationsDuringSession: number;
+}
+
 export interface Deadline {
   id: string;
   title: string;
@@ -57,9 +68,12 @@ export interface DayLog {
     aiMentorFeedback?: string;
   };
   subjectMinutes?: Record<string, number>; // ID -> Minutes
+  focusSessions?: FocusSession[];
+  unlockedAchievements?: string[];
 }
 
 export type AppMode = 'Normal' | 'Serious' | 'Exam';
+export type DateSystem = 'ENGLISH' | 'NEPALI';
 
 export interface WeeklyPlan {
   // 0 = Sunday, 1 = Monday, etc.
@@ -74,6 +88,7 @@ export interface AppSettings {
   userName: string; // Personalization
   themeAccent: 'indigo' | 'emerald' | 'rose' | 'violet' | 'orange';
   themeMode: 'zinc' | 'black' | 'light'; // zinc = original deep gray, black = OLED, light = clean white
+  dateSystem: DateSystem;
   enableSounds: boolean;
   defaultFocusMinutes: number; // Workflow preference
   appMode: AppMode;

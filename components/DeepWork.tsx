@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { DayLog, Subject } from '../types';
+import { DayLog, Subject, FocusSession } from '../types';
 import { saveLog, getAppSettings, getCustomSubjects } from '../services/storageService';
 import { playNoise, stopNoise, playSuccessTink, playAscensionSound, NoiseType } from '../services/audioGen';
 import { Play, Square, Smartphone, Check, Ban, Plus, Timer, Brain, Coffee, Volume2, ListTodo, X, Eye, EyeOff, Tag, Sparkles } from 'lucide-react';
@@ -16,7 +16,7 @@ interface Props {
 }
 
 type FocusMode = 'DEEP' | 'POMODORO';
-type TimerState = 'IDLE' | 'RUNNING';
+type TimerState = 'IDLE' | 'RUNNING' | 'PAUSED';
 type PomoPhase = 'WORK' | 'SHORT_BREAK' | 'LONG_BREAK';
 
 const NOISE_THEMES: Record<NoiseType, { bg: string, accent: string, glow: string }> = {
@@ -38,7 +38,7 @@ const SUCCESS_TITLES = [
   "Peak Protocol Meta"
 ];
 
-export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', scheduledEnd = null }) => {
+export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialTask = '', scheduledEnd = null }) => {
   const [timerState, setTimerState] = useState<TimerState>('IDLE');
   const [focusMode, setFocusMode] = useState<FocusMode>('DEEP');
 
@@ -79,6 +79,7 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
   const pomoCountRef = useRef(pomoCount);
   const totalTimeRef = useRef(totalTime);
   const sessionTaskRef = useRef(sessionTask);
+  const sessionStartRef = useRef<{ startedAt: string; startingViolations: number } | null>(null);
 
   // Load defaults
   useEffect(() => {
@@ -122,6 +123,36 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
       stopNoise(); // Stop audio on unmount
     };
   }, []);
+
+  useEffect(() => {
+    const handleFocusToggle = () => {
+      if (phoneState === 'danger') return;
+      if (timerState === 'RUNNING') {
+        pauseSession();
+        return;
+      }
+      if (timerState === 'PAUSED') {
+        resumeSession();
+        return;
+      }
+      if (phoneState === 'safe') {
+        startSession();
+      }
+    };
+
+    const handleEscape = () => {
+      setShowAbortModal(false);
+      setShowSuccessModal(false);
+      setShowBrainDumpModal(false);
+    };
+
+    window.addEventListener('focus-toggle', handleFocusToggle);
+    window.addEventListener('app-escape', handleEscape);
+    return () => {
+      window.removeEventListener('focus-toggle', handleFocusToggle);
+      window.removeEventListener('app-escape', handleEscape);
+    };
+  }, [timerState, phoneState, activeNoise, selectedDuration, focusMode, pomoPhase, sessionTask]);
 
   // --- AUDIO & HELPERS ---
   const toggleNoise = () => {
@@ -191,6 +222,12 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
     }
 
     const durationSec = durationMinutes * 60;
+    if (!sessionStartRef.current) {
+      sessionStartRef.current = {
+        startedAt: new Date().toISOString(),
+        startingViolations: logRef.current.phoneViolations || 0,
+      };
+    }
     setTotalTime(durationSec);
     setTimeLeft(durationSec);
     setTimerState('RUNNING');
@@ -212,6 +249,32 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
         return prev - 1;
       });
     }, 1000);
+  };
+
+  const pauseSession = () => {
+    if (intervalRef.current) window.clearInterval(intervalRef.current);
+    intervalRef.current = null;
+    stopNoise();
+    setTimerState('PAUSED');
+    haptic.light();
+  };
+
+  const resumeSession = () => {
+    setTimerState('RUNNING');
+    if (activeNoise !== 'off') {
+      playNoise(activeNoise);
+    }
+    if (intervalRef.current) window.clearInterval(intervalRef.current);
+    intervalRef.current = window.setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          finishTimer();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    haptic.light();
   };
 
   const skipPhase = () => {
@@ -315,10 +378,29 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
       ...currentLog,
       deepWorkMinutes: currentLog.deepWorkMinutes + (isWorkPhase ? minutesDone : 0),
       subjectMinutes: updatedSubjectMinutes,
-      schedule: currentLog.schedule.map(b => b.mode === 'Deep Work' ? { ...b, isCompleted: true } : b)
+      schedule: currentLog.schedule.map(b => b.mode === 'Deep Work' ? { ...b, isCompleted: true } : b),
+      focusSessions: (() => {
+        const prev = currentLog.focusSessions || [];
+        const startMeta = sessionStartRef.current;
+        const startedAt = startMeta?.startedAt || new Date(Date.now() - currentTotalTime * 1000).toISOString();
+        const currentViolations = currentLog.phoneViolations || 0;
+        const baseViolations = startMeta?.startingViolations || 0;
+        const session: FocusSession = {
+          id: `session_${Date.now()}`,
+          startAt: startedAt,
+          endAt: new Date().toISOString(),
+          durationMinutes: minutesDone,
+          taskName: currentTask || 'General Focus',
+          noiseType: activeNoise,
+          mode: currentFocusMode,
+          phoneViolationsDuringSession: Math.max(0, currentViolations - baseViolations),
+        };
+        return [...prev, session];
+      })()
     };
 
     saveLog(currentLog.date, newLog);
+    sessionStartRef.current = null;
     refreshLog();
 
     setLastSessionMins(minutesDone);
@@ -342,6 +424,7 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
     intervalRef.current = null;
     setTimerState('IDLE');
     stopNoise();
+    sessionStartRef.current = null;
     setShowAbortModal(false);
   };
 
@@ -655,7 +738,10 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
               {focusMode === 'DEEP' ? 'Deep Work' : pomoPhase === 'WORK' ? `Pomodoro (${pomoCount + 1}/4)` : 'Break Time'}
             </span>
           </div>
-          <h3 className="text-zinc-200 text-xl font-medium text-center line-clamp-2 max-w-[80%] mb-4">{pomoPhase === 'WORK' ? sessionTask : 'Time to Recharge'}</h3>
+          <h3 className="text-zinc-200 text-xl font-medium text-center line-clamp-2 max-w-[80%] mb-2">{pomoPhase === 'WORK' ? sessionTask : 'Time to Recharge'}</h3>
+          {timerState === 'PAUSED' && (
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-400">Paused</span>
+          )}
 
           {/* Active Manual Phase Switcher (Timer Screen) */}
           {focusMode === 'POMODORO' && (
@@ -946,4 +1032,4 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
       )}
     </div>
   );
-};
+});

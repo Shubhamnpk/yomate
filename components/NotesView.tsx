@@ -2,17 +2,20 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { DayLog, TodoItem } from '../types';
 import { saveLog } from '../services/storageService';
-import { StickyNote, Plus, Trash2, Check, Square, CheckSquare } from 'lucide-react';
+import { StickyNote, Plus, Trash2, Square, CheckSquare, Eye, EyeOff } from 'lucide-react';
 import { haptic } from '../services/hapticService';
+import { renderMarkdown } from '../services/markdown';
 
 interface Props {
   log: DayLog;
   refreshLog: () => void;
 }
 
-export const NotesView: React.FC<Props> = ({ log, refreshLog }) => {
+export const NotesView: React.FC<Props> = React.memo(({ log, refreshLog }) => {
   const [scratchpad, setScratchpad] = useState(log.scratchpad || '');
   const [newTodo, setNewTodo] = useState('');
+  const scratchpadRef = useRef<HTMLTextAreaElement | null>(null);
+  const [previewMarkdown, setPreviewMarkdown] = useState(false);
 
   // Debounce save for text area
   useEffect(() => {
@@ -25,6 +28,16 @@ export const NotesView: React.FC<Props> = ({ log, refreshLog }) => {
     }, 1000);
     return () => clearTimeout(timer);
   }, [scratchpad]);
+
+  useEffect(() => {
+    const handleQuickNote = () => {
+      scratchpadRef.current?.focus();
+      const len = scratchpadRef.current?.value.length || 0;
+      scratchpadRef.current?.setSelectionRange(len, len);
+    };
+    window.addEventListener('quick-note', handleQuickNote);
+    return () => window.removeEventListener('quick-note', handleQuickNote);
+  }, []);
 
   const handleAddTodo = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -123,19 +136,35 @@ export const NotesView: React.FC<Props> = ({ log, refreshLog }) => {
 
         {/* Scratchpad Section */}
         <div className="flex-1 flex flex-col min-h-0">
-          <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Free Notes</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Free Notes</h2>
+            <button
+              onClick={() => setPreviewMarkdown(prev => !prev)}
+              className="text-[10px] uppercase tracking-widest font-bold text-zinc-500 hover:text-zinc-300 flex items-center gap-1"
+            >
+              {previewMarkdown ? <EyeOff size={12} /> : <Eye size={12} />}
+              {previewMarkdown ? 'Edit' : 'Preview'}
+            </button>
+          </div>
           <div className="flex-1 bg-amber-50 dark:bg-zinc-900 border border-amber-100 dark:border-zinc-800 rounded-2xl p-4 shadow-sm relative overflow-hidden focus-within:ring-1 focus-within:ring-amber-500/50 transition-all">
             <div className="absolute top-0 left-0 w-full h-1 bg-amber-400/50"></div>
-            <textarea
-              value={scratchpad}
-              onChange={(e) => setScratchpad(e.target.value)}
-              placeholder="Type anything here..."
-              className="w-full h-full bg-transparent resize-none outline-none text-zinc-800 dark:text-zinc-300 placeholder-zinc-400 leading-relaxed text-sm"
-            />
+            {previewMarkdown ? (
+              <div className="w-full h-full overflow-y-auto no-scrollbar pr-1">
+                {scratchpad.trim() ? renderMarkdown(scratchpad) : <p className="text-zinc-400 text-sm">Nothing to preview yet.</p>}
+              </div>
+            ) : (
+              <textarea
+                ref={scratchpadRef}
+                value={scratchpad}
+                onChange={(e) => setScratchpad(e.target.value)}
+                placeholder="Type anything here... Use Markdown like # heading, - list, **bold**"
+                className="w-full h-full bg-transparent resize-none outline-none text-zinc-800 dark:text-zinc-300 placeholder-zinc-400 leading-relaxed text-sm"
+              />
+            )}
           </div>
         </div>
 
       </div>
     </div>
   );
-};
+});

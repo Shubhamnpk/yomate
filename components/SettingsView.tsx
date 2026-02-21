@@ -110,7 +110,7 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
 
       <div className="max-w-md mx-auto min-h-full p-6 pb-24">
         <header className="flex items-center gap-4 mb-8">
-          <button onClick={() => { haptic.light(); onClose(); }} className="p-2 bg-zinc-100 dark:bg-zinc-900 rounded-full text-zinc-500 hover:text-black dark:hover:text-white transition-colors active-scale">
+          <button title="Close Settings" onClick={() => { haptic.light(); onClose(); }} className="p-2 bg-zinc-100 dark:bg-zinc-900 rounded-full text-zinc-500 hover:text-black dark:hover:text-white transition-colors active-scale">
             <ArrowLeft size={20} />
           </button>
           <div>

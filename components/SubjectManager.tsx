@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { DayLog, Subject, AppMode } from '../types';
 import { getCustomSubjects, saveLog, getHistory, getAppSettings } from '../services/storageService';
-import { Sparkles, Plus, AlertCircle, Star, X } from 'lucide-react';
+import { Sparkles, Plus, AlertCircle, Star, X, BookOpen } from 'lucide-react';
 import { haptic } from '../services/hapticService';
 
 interface Props {
@@ -82,7 +82,7 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
               {appMode === 'Exam' ? 'Exam Mode: Maximize Coverage' : 'Balance your study mix'}
             </p>
           </div>
-          <button onClick={() => { haptic.light(); onClose(); }} className="p-2 bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors hidden sm:block">
+          <button title="Close" onClick={() => { haptic.light(); onClose(); }} className="p-2 bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors hidden sm:block">
             <X size={16} />
           </button>
         </div>
@@ -122,13 +122,14 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
                 <select
                   className="w-full bg-black text-white p-4 rounded-xl border border-zinc-800 focus:border-primary-500/50 outline-none appearance-none text-sm font-medium transition-all"
                   value={log.selectedSubjects.main1 || ''}
+                  title="Select Subject for Main Focus 1"
                   onChange={(e) => { haptic.light(); handleSelect('main1', e.target.value); }}
                 >
                   <option value="">(Empty Slot)</option>
-                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name} {s.priority === 'High' ? '★' : ''}</option>)}
+                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name}{s.priority === 'High' ? ' (High)' : ''}</option>)}
                 </select>
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-600">
-                  <BookIcon />
+                  <BookOpen />
                 </div>
               </div>
             </div>
@@ -136,16 +137,12 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
             <div>
               <label className="text-[10px] font-bold text-zinc-500 uppercase mb-2 block tracking-widest">Main Focus 2</label>
               <div className="relative">
-                <select
-                  className="w-full bg-black text-white p-4 rounded-xl border border-zinc-800 focus:border-primary-500/50 outline-none appearance-none text-sm font-medium transition-all"
-                  value={log.selectedSubjects.main2 || ''}
-                  onChange={(e) => { haptic.light(); handleSelect('main2', e.target.value); }}
-                >
+                <select title="Select your second main focus subject" className="w-full bg-black text-white p-4 rounded-xl border border-zinc-800 focus:border-primary-500/50 outline-none appearance-none text-sm font-medium transition-all" value={log.selectedSubjects.main2 || ''} onChange={(e) => { haptic.light(); handleSelect('main2', e.target.value); }}>
                   <option value="">(Empty Slot)</option>
-                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name} {s.priority === 'High' ? '★' : ''}</option>)}
+                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name}{s.priority === 'High' ? ' (High)' : ''}</option>)}
                 </select>
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-600">
-                  <BookIcon />
+                  <BookOpen />
                 </div>
               </div>
             </div>
@@ -156,13 +153,14 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
                 <select
                   className="w-full bg-black text-zinc-300 p-4 rounded-xl border border-zinc-800 focus:border-emerald-500/50 outline-none appearance-none text-sm font-medium transition-all"
                   value={log.selectedSubjects.light || ''}
+                  title="Select a subject for light study or review. This slot is ideal for subjects you want to keep in rotation without heavy focus."
                   onChange={(e) => { haptic.light(); handleSelect('light', e.target.value); }}
                 >
                   <option value="">(Empty Slot)</option>
-                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name} {s.priority === 'High' ? '★' : ''}</option>)}
+                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name}{s.priority === 'High' ? ' (High)' : ''}</option>)}
                 </select>
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-600">
-                  <BookIcon />
+                  <BookOpen />
                 </div>
               </div>
             </div>
@@ -180,6 +178,3 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
   );
 };
 
-const BookIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
-);

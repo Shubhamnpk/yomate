@@ -4,14 +4,14 @@ import { DayLog } from '../types';
 import { saveLog, saveTomorrowObjective } from '../services/storageService';
 import { getMentorFeedback } from '../services/geminiService';
 import { getCurrentTime24, formatTo12h } from '../services/timeService';
-import { Battery, Smile, Clock, Moon, CheckCircle2, XCircle, Send, Dumbbell, Target, Sparkles, Map } from 'lucide-react';
+import { Battery, Smile, Clock, Moon, CheckCircle2, XCircle, Send, Dumbbell, Target, Sparkles, Map, Lock } from 'lucide-react';
 
 interface Props {
   log: DayLog;
   refreshLog: () => void;
 }
 
-export const NightRoutine: React.FC<Props> = ({ log, refreshLog }) => {
+export const NightRoutine: React.FC<Props> = React.memo(({ log, refreshLog }) => {
   const [loadingAI, setLoadingAI] = useState(false);
   const [isLocked, setIsLocked] = useState(true);
 
@@ -82,7 +82,7 @@ export const NightRoutine: React.FC<Props> = ({ log, refreshLog }) => {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center animate-in fade-in">
         <div className="w-20 h-20 bg-zinc-900 rounded-full flex items-center justify-center mb-6 ring-1 ring-zinc-800">
-          <span className="text-3xl grayscale">🔒</span>
+          <Lock size={30} className="text-zinc-400" />
         </div>
         <h2 className="text-xl font-bold text-white mb-2">Protocol Locked</h2>
         <p className="text-zinc-500 mb-8 max-w-xs leading-relaxed">
@@ -365,4 +365,5 @@ export const NightRoutine: React.FC<Props> = ({ log, refreshLog }) => {
       </div>
     </div>
   );
-};
+});
+

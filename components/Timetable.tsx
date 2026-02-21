@@ -1,8 +1,9 @@
 
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { DayLog, ScheduleBlock, AppMode } from '../types';
+import { DayLog, ScheduleBlock, AppMode, DateSystem } from '../types';
 import { updateScheduleStatus, updateScheduleBlock, splitBlockInSchedule, shiftScheduleForward, getAppSettings, getYesterdayLog, saveLog, getStreak } from '../services/storageService';
 import { formatTo12h, isTimeInRange, getMinutesDiff } from '../services/timeService';
+import { formatDateBySystem } from '../services/dateDisplay';
 import { SubjectManager } from './SubjectManager';
 import { EditBlockModal } from './EditBlockModal';
 import { BlockActionModal } from './BlockActionModal';
@@ -20,7 +21,7 @@ interface Props {
   currentTime: string; // Lifted state
 }
 
-export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, currentTime }) => {
+export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refreshApp, currentTime }) => {
   const [showStrategy, setShowStrategy] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showBrainDump, setShowBrainDump] = useState(false);
@@ -30,6 +31,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
   const [streak, setStreak] = useState(0);
   const [userName, setUserName] = useState('Student');
   const [rituals, setRituals] = useState<string[]>([]);
+  const [dateSystem, setDateSystem] = useState<DateSystem>('ENGLISH');
 
   // New: Insight State
   const [yesterdayInsight, setYesterdayInsight] = useState<string | null>(null);
@@ -76,6 +78,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
     setStreak(getStreak());
     setUserName(settings.userName || 'Student');
     setRituals(settings.rituals || []);
+    setDateSystem(settings.dateSystem || 'ENGLISH');
 
     const yesterday = getYesterdayLog();
     if (yesterday && yesterday.reflection.fixForTomorrow) {
@@ -102,6 +105,19 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
     }
 
   }, [showSettings]);
+
+  useEffect(() => {
+    const handleEscape = () => {
+      setShowStrategy(false);
+      setShowSettings(false);
+      setShowBrainDump(false);
+      setSelectedBlockId(null);
+      setClickedBlock(null);
+      setEditMode(false);
+    };
+    window.addEventListener('app-escape', handleEscape);
+    return () => window.removeEventListener('app-escape', handleEscape);
+  }, []);
 
   // --- NEXT BLOCK LOGIC (Sleep/Break Detection) ---
   const { nextBlock, isSleep, timeUntil } = useMemo(() => {
@@ -233,6 +249,11 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
     return getMinutesDiff(currentTime, end);
   };
 
+  const activeFocusBlock = useMemo(() => {
+    if (!activeBlockId) return null;
+    return log.schedule.find(b => b.id === activeBlockId && (b.mode === 'Study' || b.mode === 'Deep Work')) || null;
+  }, [activeBlockId, log.schedule]);
+
   return (
     <div className="p-5 pb-32 animate-in fade-in duration-500">
       {showSettings && (
@@ -280,17 +301,17 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
             Hi, {userName}
           </h1>
           <div className="flex items-center gap-2 mt-1">
-            {streak > 0 && (
-              <div className="flex items-center gap-1 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-full animate-in zoom-in">
-                <Flame size={12} className="text-orange-500 fill-orange-500 animate-pulse" />
-                <span className="text-[10px] font-bold text-orange-500 font-mono">{streak}</span>
-              </div>
-            )}
             <p className="text-zinc-500 text-sm font-medium uppercase tracking-wide">
-              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+              {formatDateBySystem(new Date(), dateSystem, { weekday: 'short', month: 'long', day: 'numeric' })}
             </p>
             <span className="text-zinc-700 dark:text-zinc-600">•</span>
             <p className="text-primary-500 text-xs font-bold uppercase tracking-wide">{appMode} Mode</p>
+          </div>
+          <div className={`inline-flex mt-2 items-center gap-1.5 px-2.5 py-0.5 rounded-full animate-in zoom-in ${streak > 0 ? 'bg-orange-500/10 border border-orange-500/20' : 'bg-zinc-200/70 dark:bg-zinc-800/70 border border-zinc-300 dark:border-zinc-700'}`}>
+            <Flame size={12} className={streak > 0 ? 'text-orange-500 fill-orange-500 animate-pulse' : 'text-zinc-500 dark:text-zinc-400'} />
+            <span className={`text-[10px] font-bold font-mono ${streak > 0 ? 'text-orange-500' : 'text-zinc-500 dark:text-zinc-400'}`}>
+              {streak} day{streak === 1 ? '' : 's'} streak
+            </span>
           </div>
         </div>
 
@@ -383,6 +404,23 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
             )
           })}
         </div>
+      )}
+
+      {activeFocusBlock && !activeFocusBlock.isCompleted && (
+        <button
+          onClick={(e) => handleQuickFocus(e, getRealActivityName(activeFocusBlock.activityName), activeFocusBlock.endTime)}
+          className="w-full mb-6 p-4 rounded-2xl border border-primary-500/30 bg-gradient-to-r from-primary-500/20 to-primary-500/5 hover:from-primary-500/30 hover:to-primary-500/10 transition-all shadow-lg shadow-primary-900/20 flex items-center justify-between"
+        >
+          <div className="text-left">
+            <p className="text-[10px] uppercase tracking-widest font-bold text-primary-300">Quick Start</p>
+            <p className="text-sm font-bold text-white">Launch focus for {getRealActivityName(activeFocusBlock.activityName)}</p>
+            <p className="text-[10px] text-zinc-400">Ends at {formatTo12h(activeFocusBlock.endTime)}</p>
+          </div>
+          <div className="flex items-center gap-2 text-primary-200">
+            <Play size={16} className="fill-current" />
+            <ChevronRight size={14} />
+          </div>
+        </button>
       )}
 
       {/* --- SLEEP / GAP PHASE UI --- */}
@@ -576,4 +614,5 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
       </div>
     </div>
   );
-};
+});
+

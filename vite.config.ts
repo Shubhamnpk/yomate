@@ -22,7 +22,25 @@ export default defineConfig(({ mode }) => {
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,json}']
+          globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+          globIgnores: ['**/manifest.json', '**/manifest.webmanifest'],
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/generativelanguage\.googleapis\.com\/.*/i,
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'gemini-api-cache',
+                networkTimeoutSeconds: 5,
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+                expiration: {
+                  maxEntries: 20,
+                  maxAgeSeconds: 60 * 60 * 24,
+                },
+              },
+            },
+          ]
         },
         devOptions: {
           enabled: false // Disable PWA in dev mode as requested

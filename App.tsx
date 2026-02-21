@@ -1,11 +1,11 @@
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { initializeToday, getStoredLog, getAppSettings, resetApp, saveLog, saveAppSettings } from './services/storageService';
 import { DayLog, ViewState, AppSettings } from './types';
 import { getCurrentTime24 } from './services/timeService';
 import { initializeAudio, playAscensionSound } from './services/audioGen';
 import { haptic } from './services/hapticService';
-import { sendTimerNotification, sendSleepReminder } from './services/notificationService';
+import { sendTimerNotification, sendSleepReminder, sendScheduleReminder, sendRitualReminder } from './services/notificationService';
 import { Navigation } from './components/Navigation';
 import { Timetable } from './components/Timetable';
 import { DeepWork } from './components/DeepWork';
@@ -248,17 +248,14 @@ const DebugConsole: React.FC<{
             </button>
             <button
               onClick={() => {
-                const logs = getStoredLog();
                 const today = new Date();
                 // Inject logs for last 5 days
                 for (let i = 1; i <= 5; i++) {
                   const d = new Date(today);
                   d.setDate(today.getDate() - i);
                   const dStr = d.toISOString().split('T')[0];
-                  // @ts-ignore
-                  logs[dStr] = { ...initializeToday(true), deepWorkMinutes: 60 };
+                  saveLog(dStr, { ...initializeToday(true), date: dStr, deepWorkMinutes: 60 });
                 }
-                localStorage.setItem('youmeet_data_v5', JSON.stringify(logs));
                 onRefresh();
               }}
               className="w-full py-2 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded text-[10px] font-bold flex items-center justify-center gap-2 hover:bg-orange-500/20"
@@ -306,24 +303,59 @@ const App: React.FC = () => {
   // Swipe Navigation State
   const touchStart = useRef<number | null>(null);
   const touchEnd = useRef<number | null>(null);
+  const swipeBlocked = useRef(false);
 
   // Time State (Lifted for Debugging)
   const [realTime, setRealTime] = useState(getCurrentTime24());
   const [overrideTime, setOverrideTime] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
+  const notifiedRef = useRef<Set<string>>(new Set());
 
   const effectiveTime = overrideTime || realTime;
+  const primaryRgb = ACCENT_COLORS[settings.themeAccent] || ACCENT_COLORS['indigo'];
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStart.current = e.targetTouches[0].clientX;
+  const isSwipeBlockedContext = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) return false;
+
+    // Don't start swipe navigation on controls/dropdowns/editable elements.
+    if (target.closest('input, textarea, select, option, button, a, [contenteditable="true"], [role="button"], [data-no-swipe="true"]')) {
+      return true;
+    }
+
+    // Disable swipe nav while full-screen modal/overlay is active.
+    if (document.querySelector('.fixed.inset-0.z-50, .fixed.inset-0.z-\\[50\\], .fixed.inset-0.z-\\[100\\]')) {
+      return true;
+    }
+
+    return false;
   };
 
-  const handleTouchMove = (e: React.TouchEvent) => {
+  const handleTouchStart = (e: React.TouchEvent) => {
+    swipeBlocked.current = isSwipeBlockedContext(e.target);
+    if (swipeBlocked.current) {
+      touchStart.current = null;
+      touchEnd.current = null;
+      return;
+    }
+    touchStart.current = e.targetTouches[0].clientX;
     touchEnd.current = e.targetTouches[0].clientX;
   };
 
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (swipeBlocked.current) return;
+    const currentX = e.targetTouches[0].clientX;
+    touchEnd.current = currentX;
+  };
+
   const handleTouchEnd = () => {
-    if (!touchStart.current || !touchEnd.current) return;
+    if (swipeBlocked.current) {
+      swipeBlocked.current = false;
+      return;
+    }
+
+    if (touchStart.current === null || touchEnd.current === null) {
+      return;
+    }
     const distance = touchStart.current - touchEnd.current;
     const isLeftSwipe = distance > 70;
     const isRightSwipe = distance < -70;
@@ -346,6 +378,13 @@ const App: React.FC = () => {
 
     touchStart.current = null;
     touchEnd.current = null;
+    swipeBlocked.current = false;
+  };
+
+  const isTypingElement = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
   };
 
   useEffect(() => {
@@ -353,13 +392,44 @@ const App: React.FC = () => {
     // 1s intervals caused a full React tree re-render every second, killing mobile perf.
     const interval = setInterval(() => {
       setRealTime(getCurrentTime24());
-    }, 1000);
+    }, 60000);
 
-    // DevTools Shortcut (Ctrl + D)
+    // Global keyboard shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isTypingElement(e.target)) return;
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         setShowDebug(prev => !prev);
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        setShowDebug(false);
+        window.dispatchEvent(new CustomEvent('app-escape'));
+        return;
+      }
+
+      if (e.key === ' ') {
+        e.preventDefault();
+        if (currentView !== 'FOCUS') {
+          setView('FOCUS');
+        }
+        window.dispatchEvent(new CustomEvent('focus-toggle'));
+        return;
+      }
+
+      if (e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        setView('NOTES');
+        setTimeout(() => window.dispatchEvent(new CustomEvent('quick-note')), 0);
+        return;
+      }
+
+      if (['1', '2', '3', '4', '5'].includes(e.key)) {
+        e.preventDefault();
+        const idx = Number(e.key) - 1;
+        if (VIEW_ORDER[idx]) setView(VIEW_ORDER[idx]);
       }
     };
 
@@ -413,7 +483,69 @@ const App: React.FC = () => {
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor);
   }, [settings.themeMode]);
 
-  const refreshLog = () => {
+  useEffect(() => {
+    const favicon = document.querySelector('link[rel="icon"]') as HTMLLinkElement | null;
+    if (!favicon) return;
+
+    const rgb = primaryRgb.split(' ').map(Number);
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, 64, 64);
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(0, 0, 64, 64);
+    ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+    ctx.beginPath();
+    ctx.arc(32, 32, 20, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(32, 32, 7, 0, Math.PI * 2);
+    ctx.fill();
+    favicon.href = canvas.toDataURL('image/png');
+  }, [primaryRgb]);
+
+  useEffect(() => {
+    if (!dayLog) return;
+    const dateKey = dayLog.date;
+    const [h, m] = effectiveTime.split(':').map(Number);
+    const currentMins = h * 60 + m;
+    const currentAdjusted = h < 5 ? (h + 24) * 60 + m : currentMins;
+
+    const sorted = [...dayLog.schedule].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const nextBlock = sorted.find(b => b.startTime > effectiveTime) || sorted[0];
+
+    if (nextBlock) {
+      const [bh, bm] = nextBlock.startTime.split(':').map(Number);
+      let minsUntil = (bh * 60 + bm) - currentMins;
+      if (minsUntil < 0) minsUntil += 24 * 60;
+      const scheduleKey = `${dateKey}:schedule:${nextBlock.id}`;
+      if (minsUntil === 5 && !notifiedRef.current.has(scheduleKey)) {
+        sendScheduleReminder(nextBlock.activityName, 5);
+        notifiedRef.current.add(scheduleKey);
+      }
+    }
+
+    const sleepKey = `${dateKey}:sleep30`;
+    if (currentAdjusted === 24 * 60 && !notifiedRef.current.has(sleepKey)) {
+      sendSleepReminder();
+      notifiedRef.current.add(sleepKey);
+    }
+
+    const ritualKey = `${dateKey}:ritual`;
+    const rituals = settings.rituals || [];
+    const completed = new Set(dayLog.completedRituals || []);
+    const pendingRitual = rituals.find(r => !completed.has(r));
+    if (currentMins === 20 * 60 && pendingRitual && !notifiedRef.current.has(ritualKey)) {
+      sendRitualReminder(pendingRitual);
+      notifiedRef.current.add(ritualKey);
+    }
+  }, [effectiveTime, dayLog, settings.rituals]);
+
+  const refreshLog = useCallback(() => {
     const todayStr = new Date().toISOString().split('T')[0];
     const logs = getStoredLog();
     if (logs[todayStr]) {
@@ -421,11 +553,11 @@ const App: React.FC = () => {
     } else {
       setDayLog(initializeToday());
     }
-  };
+  }, []);
 
-  const refreshApp = () => {
+  const refreshApp = useCallback(() => {
     setSettings(getAppSettings());
-  };
+  }, []);
 
   useEffect(() => {
     setDayLog(initializeToday());
@@ -454,8 +586,6 @@ const App: React.FC = () => {
     light: 'bg-zinc-50'
   }[settings.themeMode] || 'bg-black';
 
-  const primaryRgb = ACCENT_COLORS[settings.themeAccent] || ACCENT_COLORS['indigo'];
-
   return (
     <div
       className={`h-[100dvh] w-full ${themeBg} text-zinc-900 dark:text-zinc-200 font-sans selection:bg-primary-500/30 overflow-hidden flex flex-col relative transition-colors duration-700`}
@@ -468,11 +598,11 @@ const App: React.FC = () => {
       <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-40" style={{ contain: 'strict' }}>
         <div
           className="absolute top-[-10%] left-[-10%] w-[35%] h-[35%] bg-primary-500/10 blur-[60px] rounded-full animate-pulse-soft"
-          style={{ willChange: 'opacity', transform: 'translateZ(0)' }}
+          style={{ willChange: 'opacity, transform', transform: 'translateZ(0)' }}
         ></div>
         <div
           className="absolute bottom-[-10%] right-[-10%] w-[35%] h-[35%] bg-indigo-500/10 blur-[60px] rounded-full animate-pulse-soft"
-          style={{ willChange: 'opacity', transform: 'translateZ(0)', animationDelay: '2s' }}
+          style={{ willChange: 'opacity, transform', transform: 'translateZ(0)', animationDelay: '2s' }}
         ></div>
       </div>
 
@@ -491,7 +621,9 @@ const App: React.FC = () => {
             onRefresh={refreshLog}
           />
 
-          <div className={`w-full max-w-md mx-auto h-full flex flex-col relative ${themeBg} shadow-2xl`}>
+          <div
+            className={`w-full max-w-md mx-auto h-full flex flex-col relative ${themeBg} shadow-2xl`}
+          >
 
             {/* Main Content Area */}
             <main className="flex-1 overflow-y-auto scroll-smooth pb-safe no-scrollbar">

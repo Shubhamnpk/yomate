@@ -75,3 +75,19 @@ export const sendSleepReminder = () => {
         'info'
     );
 };
+
+export const sendScheduleReminder = (blockName: string, minutes: number) => {
+    sendTimerNotification(
+        'Yomate | Block Reminder',
+        `${blockName} starts in ${minutes} minutes.`,
+        'info'
+    );
+};
+
+export const sendRitualReminder = (ritualName: string) => {
+    sendTimerNotification(
+        'Yomate | Ritual Reminder',
+        `You have not completed "${ritualName}" today.`,
+        'alert'
+    );
+};

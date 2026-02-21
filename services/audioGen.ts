@@ -1,12 +1,19 @@
 
-import * as Tone from 'tone';
+type ToneModule = typeof import('tone');
 
 // Professional-grade procedural ambient synthesis management
 // Handles resource lifecycle to prevent race conditions during sound switching.
 
 let currentSources: any[] = [];
 let birdInterval: number | null = null;
-let currentMainGain: Tone.Gain | null = null;
+let currentMainGain: any | null = null;
+let toneModule: ToneModule | null = null;
+
+const getTone = async (): Promise<ToneModule> => {
+  if (toneModule) return toneModule;
+  toneModule = await import('tone');
+  return toneModule;
+};
 
 export type NoiseType = 'rain' | 'river' | 'wind' | 'ocean' | 'forest' | 'campfire' | 'off';
 
@@ -37,12 +44,14 @@ const cleanupImmediate = () => {
 };
 
 export const initializeAudio = async () => {
+  const Tone = await getTone();
   if (Tone.context.state !== 'running') {
     await Tone.start();
   }
 };
 
 export const playNoise = async (type: NoiseType) => {
+  const Tone = await getTone();
   // Ensure AudioContext is started
   await initializeAudio();
 
@@ -202,6 +211,7 @@ export const setVolume = (val: number) => {
 };
 
 export const playSuccessTink = async () => {
+  const Tone = await getTone();
   await Tone.start();
   const synth = new Tone.MonoSynth({
     oscillator: { type: "sine" },
@@ -215,6 +225,7 @@ export const playSuccessTink = async () => {
 };
 
 export const playAscensionSound = async () => {
+  const Tone = await getTone();
   await Tone.start();
 
   // Shimmering PolySynth for a tech-elegant feel

@@ -8,14 +8,98 @@ const STORAGE_KEY = 'youmeet_data_v5';
 const TEMPLATE_KEY = 'youmeet_template_v1';
 const SUBJECTS_KEY = 'youmeet_subjects_v1';
 const SETTINGS_KEY = 'youmeet_settings_v1';
+const LOG_SAVE_DEBOUNCE_MS = 250;
+
+let logCache: Record<string, DayLog> | null = null;
+let logSaveTimer: number | null = null;
+
+const persistLogsNow = () => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(logCache || {}));
+  logSaveTimer = null;
+};
+
+const scheduleLogPersist = () => {
+  if (logSaveTimer) {
+    window.clearTimeout(logSaveTimer);
+  }
+  logSaveTimer = window.setTimeout(persistLogsNow, LOG_SAVE_DEBOUNCE_MS);
+};
+
+const invalidateLogCache = () => {
+  logCache = null;
+  if (logSaveTimer) {
+    window.clearTimeout(logSaveTimer);
+    logSaveTimer = null;
+  }
+};
+
+export const flushPendingLogSave = () => {
+  if (logSaveTimer) {
+    window.clearTimeout(logSaveTimer);
+    persistLogsNow();
+  }
+};
 
 export const getTodayDateString = (): string => {
   return new Date().toISOString().split('T')[0];
 };
 
+const getDateDaysAgo = (dateStr: string, daysAgo: number): string => {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() - daysAgo);
+  return d.toISOString().split('T')[0];
+};
+
+const calculateStreakEndingAt = (logs: Record<string, DayLog>, dateStr: string): number => {
+  let streak = 0;
+  const date = new Date(dateStr);
+  while (true) {
+    const dStr = date.toISOString().split('T')[0];
+    if (logs[dStr] && logs[dStr].deepWorkMinutes > 15) {
+      streak++;
+      date.setDate(date.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+  return streak;
+};
+
+const evaluateAchievements = (logs: Record<string, DayLog>, date: string, settings: AppSettings): string[] => {
+  const log = logs[date];
+  if (!log) return [];
+
+  const unlocked = new Set<string>(log.unlockedAchievements || []);
+  const rituals = settings.rituals || [];
+
+  if (log.deepWorkMinutes >= 100) unlocked.add('FIRST_100_MIN_DAY');
+  if (calculateStreakEndingAt(logs, date) >= 7) unlocked.add('STREAK_7');
+
+  const noPhone3 = [0, 1, 2].every(offset => {
+    const dStr = getDateDaysAgo(date, offset);
+    return logs[dStr] && logs[dStr].phoneViolations === 0;
+  });
+  if (noPhone3) unlocked.add('NO_PHONE_3_DAYS');
+
+  if (rituals.length > 0) {
+    const ritualsWeek = Array.from({ length: 7 }).every((_, offset) => {
+      const dStr = getDateDaysAgo(date, offset);
+      const dLog = logs[dStr];
+      if (!dLog) return false;
+      const completed = new Set(dLog.completedRituals || []);
+      return rituals.every(r => completed.has(r));
+    });
+    if (ritualsWeek) unlocked.add('RITUALS_WEEK');
+  }
+
+  return Array.from(unlocked);
+};
+
 export const getStoredLog = (): Record<string, DayLog> => {
+  if (logCache) return logCache;
   const stored = localStorage.getItem(STORAGE_KEY);
-  return stored ? JSON.parse(stored) : {};
+  logCache = stored ? JSON.parse(stored) : {};
+  return logCache;
 };
 
 // --- SETTINGS MANAGEMENT ---
@@ -34,6 +118,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   userName: 'Student',
   themeAccent: 'indigo',
   themeMode: 'zinc',
+  dateSystem: 'ENGLISH',
   enableSounds: true,
   defaultFocusMinutes: 60,
   appMode: 'Normal',
@@ -76,6 +161,7 @@ export const saveCustomSubjects = (subjects: Subject[]) => {
 // --- DATA MANAGEMENT (Import/Export/Reset) ---
 
 export const exportData = () => {
+  flushPendingLogSave();
   const data = {
     logs: getStoredLog(),
     template: getScheduleTemplate(),
@@ -95,7 +181,11 @@ export const exportData = () => {
 export const importData = (jsonString: string) => {
   try {
     const data = JSON.parse(jsonString);
-    if (data.logs) localStorage.setItem(STORAGE_KEY, JSON.stringify(data.logs));
+    invalidateLogCache();
+    if (data.logs) {
+      logCache = data.logs;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data.logs));
+    }
     if (data.template) localStorage.setItem(TEMPLATE_KEY, JSON.stringify(data.template));
     if (data.subjects) localStorage.setItem(SUBJECTS_KEY, JSON.stringify(data.subjects));
     if (data.settings) localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
@@ -106,6 +196,7 @@ export const importData = (jsonString: string) => {
 };
 
 export const resetApp = () => {
+  invalidateLogCache();
   // Only clear Yomate-specific keys, not all localStorage
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(TEMPLATE_KEY);
@@ -173,8 +264,16 @@ export const getYesterdayLog = (): DayLog | null => {
 
 export const saveLog = (date: string, data: DayLog) => {
   const allLogs = getStoredLog();
-  allLogs[date] = data;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(allLogs));
+  const settings = getAppSettings();
+  const merged: DayLog = {
+    ...data,
+    focusSessions: data.focusSessions || [],
+    unlockedAchievements: data.unlockedAchievements || [],
+  };
+  allLogs[date] = merged;
+  allLogs[date].unlockedAchievements = evaluateAchievements(allLogs, date, settings);
+  logCache = allLogs;
+  scheduleLogPersist();
 };
 
 export const initializeToday = (dryRun = false): DayLog => {
@@ -195,6 +294,14 @@ export const initializeToday = (dryRun = false): DayLog => {
     // Legacy support: ensure subjectMinutes exist
     if (!logs[date].subjectMinutes) {
       logs[date].subjectMinutes = {};
+      saveLog(date, logs[date]);
+    }
+    if (!logs[date].focusSessions) {
+      logs[date].focusSessions = [];
+      saveLog(date, logs[date]);
+    }
+    if (!logs[date].unlockedAchievements) {
+      logs[date].unlockedAchievements = [];
       saveLog(date, logs[date]);
     }
     return logs[date];
@@ -241,7 +348,9 @@ export const initializeToday = (dryRun = false): DayLog => {
       whatWentRight: '',
       distractionWin: '',
       fixForTomorrow: '',
-    }
+    },
+    focusSessions: [],
+    unlockedAchievements: [],
   };
 
   // Look for primary objective set yesterday
@@ -404,7 +513,9 @@ const initializeTodayForDate = (date: string): DayLog => {
       whatWentRight: '',
       distractionWin: '',
       fixForTomorrow: '',
-    }
+    },
+    focusSessions: [],
+    unlockedAchievements: [],
   };
 };
 
