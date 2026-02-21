@@ -22,7 +22,8 @@ export default defineConfig(({ mode }) => {
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,json}']
+          globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+          globIgnores: ['**/manifest.json', '**/manifest.webmanifest'],
         },
         devOptions: {
           enabled: false // Disable PWA in dev mode as requested

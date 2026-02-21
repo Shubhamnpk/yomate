@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { CheckCircle2, Plus, X, CalendarDays, ChevronLeft, ChevronRight, Sparkles, Star, Clock, Flag, AlertOctagon, Milestone, Trash2 } from 'lucide-react';
 import { AppSettings, Subject, DayLog, Deadline } from '../../types';
 import { haptic } from '../../services/hapticService';
+import { formatDateBySystem } from '../../services/dateDisplay';
 
 interface Props {
     settings: AppSettings;
@@ -137,7 +138,7 @@ export const StrategyTab: React.FC<Props> = ({
                                         </div>
                                         <div>
                                             <p className="text-sm font-bold">{item.title}</p>
-                                            <p className="text-[10px] text-zinc-500">{new Date(item.date).toLocaleDateString()} • {daysLeft} days left</p>
+                                            <p className="text-[10px] text-zinc-500">{formatDateBySystem(item.date, settings.dateSystem)} • {daysLeft} days left</p>
                                         </div>
                                     </div>
                                     <button onClick={() => handleDeleteDeadline(item.id)} className="p-2 text-zinc-400 hover:text-rose-500 transition-colors opacity-50 group-hover:opacity-100"><Trash2 size={16} /></button>
@@ -209,7 +210,7 @@ export const StrategyTab: React.FC<Props> = ({
                                         className="w-full bg-white dark:bg-black text-zinc-900 dark:text-white p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 focus:border-primary-500 outline-none text-sm transition-colors"
                                     >
                                         <option value="">(No specific subject)</option>
-                                        {subjects.map(s => <option key={s.id} value={s.id}>{s.name} {s.priority === 'High' ? '★' : ''}</option>)}
+                                        {subjects.map(s => <option key={s.id} value={s.id}>{s.name}{s.priority === 'High' ? ' (High)' : ''}</option>)}
                                     </select>
                                 </div>
                             );
@@ -278,4 +279,6 @@ export const StrategyTab: React.FC<Props> = ({
         </div>
     );
 };
+
+
 

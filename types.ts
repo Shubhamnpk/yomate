@@ -7,6 +7,11 @@ export interface ScheduleBlock {
   endTime: string; // HH:mm
   activityName: string;
   mode: ActivityMode;
+  blockType?: 'TASK' | 'EVENT'; // EVENT = fixed event/class style block
+  daysOfWeek?: number[]; // 0=Sun ... 6=Sat. Omitted means every day.
+  eventDate?: string; // Optional start date (YYYY-MM-DD) for EVENT blocks
+  eventEndDate?: string; // Optional end date (YYYY-MM-DD) for EVENT blocks
+  durationMinutes?: number; // Optional explicit duration metadata, mainly for EVENT blocks
   isCompleted: boolean;
 }
 
@@ -23,6 +28,17 @@ export interface TodoItem {
   completed: boolean;
 }
 
+export interface FocusSession {
+  id: string;
+  startAt: string; // ISO string
+  endAt: string; // ISO string
+  durationMinutes: number;
+  taskName: string;
+  noiseType: string;
+  mode: 'DEEP' | 'POMODORO';
+  phoneViolationsDuringSession: number;
+}
+
 export interface Deadline {
   id: string;
   title: string;
@@ -37,6 +53,7 @@ export interface DayLog {
     main2: string | null;
     light: string | null;
   };
+  additionalSubjects?: string[]; // Extra subjects selected for today (counted once per day)
   schedule: ScheduleBlock[];
   deepWorkMinutes: number;
   phoneViolations: number; // "In hand" selections
@@ -57,9 +74,12 @@ export interface DayLog {
     aiMentorFeedback?: string;
   };
   subjectMinutes?: Record<string, number>; // ID -> Minutes
+  focusSessions?: FocusSession[];
+  unlockedAchievements?: string[];
 }
 
 export type AppMode = 'Normal' | 'Serious' | 'Exam';
+export type DateSystem = 'ENGLISH' | 'NEPALI';
 
 export interface WeeklyPlan {
   // 0 = Sunday, 1 = Monday, etc.
@@ -74,6 +94,7 @@ export interface AppSettings {
   userName: string; // Personalization
   themeAccent: 'indigo' | 'emerald' | 'rose' | 'violet' | 'orange';
   themeMode: 'zinc' | 'black' | 'light'; // zinc = original deep gray, black = OLED, light = clean white
+  dateSystem: DateSystem;
   enableSounds: boolean;
   defaultFocusMinutes: number; // Workflow preference
   appMode: AppMode;

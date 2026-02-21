@@ -4,6 +4,7 @@ import { ScheduleBlock, AppMode } from '../types';
 import { getCurrentTime24, getMinutesDiff } from '../services/timeService';
 import { getScheduleTemplate } from '../services/storageService';
 import { CheckCircle2, Clock, FastForward, Coffee, BookOpen, X, Moon, Sunrise } from 'lucide-react';
+import { Model } from './ui/model';
 
 import { haptic } from '../services/hapticService';
 
@@ -58,35 +59,37 @@ export const BlockActionModal: React.FC<Props> = ({ block, appMode, onComplete, 
     const formattedMins = Math.round((sleepHours - formattedHours) * 60);
 
     return (
-      <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-300">
-        <div onClick={onClose} className="absolute inset-0"></div>
-        <div className="bg-zinc-900 border-t sm:border border-zinc-800 w-full max-w-md sm:rounded-2xl p-6 sm:pb-6 pb-12 shadow-2xl relative overflow-hidden animate-slide-up sm:animate-in sm:zoom-in-95">
-          {/* Native Drag Handle */}
-          <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6 sm:hidden" />
+      <Model
+        onClose={onClose}
+        zIndexClass="z-[60]"
+        layout="bottom"
+        showMobileHandle
+        contentClassName="bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 sm:rounded-2xl p-6 sm:pb-6 pb-12 relative overflow-hidden animate-slide-up sm:animate-in sm:zoom-in-95"
+      >
 
           {/* Background Decoration */}
           <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-          <button onClick={() => { haptic.light(); onClose(); }} className="absolute top-4 right-4 text-zinc-500 hover:text-white hidden sm:block"><X size={20} /></button>
+          <button onClick={() => { haptic.light(); onClose(); }} className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-900 dark:hover:text-white hidden sm:block"><X size={20} /></button>
 
           <div className="relative z-10">
             <div className="w-12 h-12 bg-indigo-500/10 rounded-full flex items-center justify-center text-indigo-400 mb-4">
               <Moon size={24} />
             </div>
 
-            <h2 className="text-xl font-bold text-white mb-2 font-display">Heading to bed?</h2>
-            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">
+            <h2 className="text-xl font-bold text-zinc-900 dark:text-white mb-2 font-display">Heading to bed?</h2>
+            <p className="text-zinc-600 dark:text-zinc-400 text-sm mb-6 leading-relaxed">
               If you sleep now, you will get approximately:
             </p>
 
-            <div className="flex items-center gap-4 mb-8 bg-zinc-950/50 p-4 rounded-xl border border-zinc-800/50">
+            <div className="flex items-center gap-4 mb-8 bg-zinc-100 dark:bg-zinc-950/50 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800/50">
               <div className="flex-1">
-                <span className="block text-3xl font-mono font-bold text-white">{formattedHours}<span className="text-sm text-zinc-500 ml-1">h</span> {formattedMins}<span className="text-sm text-zinc-500 ml-1">m</span></span>
+                <span className="block text-3xl font-mono font-bold text-zinc-900 dark:text-white">{formattedHours}<span className="text-sm text-zinc-500 ml-1">h</span> {formattedMins}<span className="text-sm text-zinc-500 ml-1">m</span></span>
                 <span className="text-[10px] uppercase tracking-wider text-emerald-500 font-bold">Rest Duration</span>
               </div>
-              <div className="w-px h-8 bg-zinc-800"></div>
+              <div className="w-px h-8 bg-zinc-300 dark:bg-zinc-800"></div>
               <div className="flex-1 text-right">
-                <div className="flex items-center justify-end gap-1 text-zinc-400 mb-1">
+                <div className="flex items-center justify-end gap-1 text-zinc-500 dark:text-zinc-400 mb-1">
                   <Sunrise size={14} />
                   <span className="text-xs font-bold">{wakeUpTime}</span>
                 </div>
@@ -95,7 +98,7 @@ export const BlockActionModal: React.FC<Props> = ({ block, appMode, onComplete, 
             </div>
 
             <div className="flex gap-3">
-              <button onClick={() => { haptic.light(); onClose(); }} className="flex-1 py-4 rounded-2xl bg-zinc-800 text-zinc-300 font-medium active:opacity-70 active:scale-[0.98] transition-all">Not yet</button>
+              <button onClick={() => { haptic.light(); onClose(); }} className="flex-1 py-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-medium active:opacity-70 active:scale-[0.98] transition-all">Not yet</button>
               <button
                 onClick={() => { haptic.success(); onComplete(); }}
                 className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-bold active:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-900/20"
@@ -104,46 +107,50 @@ export const BlockActionModal: React.FC<Props> = ({ block, appMode, onComplete, 
               </button>
             </div>
           </div>
-        </div>
-      </div>
+      </Model>
     );
   }
 
   // If task is already done, simple option to undo (handled by parent logic usually, but here we act as "Interact")
   if (block.isCompleted) {
     return (
-      <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-300">
-        <div onClick={onClose} className="absolute inset-0"></div>
-        <div className="bg-zinc-900 border-t sm:border border-zinc-800 w-full max-w-md sm:rounded-2xl p-6 sm:pb-6 pb-12 shadow-2xl relative animate-slide-up sm:animate-in sm:zoom-in-95">
-          <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6 sm:hidden" />
-          <button onClick={() => { haptic.light(); onClose(); }} className="absolute top-4 right-4 text-zinc-500 hover:text-white hidden sm:block"><X size={20} /></button>
+      <Model
+        onClose={onClose}
+        zIndexClass="z-[60]"
+        layout="bottom"
+        showMobileHandle
+        contentClassName="bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 sm:rounded-2xl p-6 sm:pb-6 pb-12 animate-slide-up sm:animate-in sm:zoom-in-95"
+      >
+          <button onClick={() => { haptic.light(); onClose(); }} className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-900 dark:hover:text-white hidden sm:block"><X size={20} /></button>
 
-          <h3 className="text-white font-bold mb-4 text-xl font-display">Task Completed</h3>
-          <p className="text-zinc-400 text-sm mb-6 leading-relaxed">This block is marked as done. Do you want to reopen it?</p>
+          <h3 className="text-zinc-900 dark:text-white font-bold mb-4 text-xl font-display">Task Completed</h3>
+          <p className="text-zinc-600 dark:text-zinc-400 text-sm mb-6 leading-relaxed">This block is marked as done. Do you want to reopen it?</p>
           <div className="flex gap-3">
-            <button onClick={() => { haptic.light(); onClose(); }} className="flex-1 py-4 rounded-2xl bg-zinc-800 text-zinc-300 active-scale">Cancel</button>
+            <button onClick={() => { haptic.light(); onClose(); }} className="flex-1 py-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 active-scale">Cancel</button>
             <button onClick={() => { haptic.medium(); onComplete(); }} className="flex-1 py-4 rounded-2xl bg-white text-black font-bold active-scale">Mark Incomplete</button>
           </div>
-        </div>
-      </div>
+      </Model>
     );
   }
 
   // --- EARLY FINISH SCENARIO ---
   if (minutesSaved > 5) {
     return (
-      <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-300">
-        <div onClick={onClose} className="absolute inset-0"></div>
-        <div className="bg-zinc-900 border-t sm:border border-zinc-800 w-full max-w-md sm:rounded-2xl p-6 sm:pb-6 pb-12 shadow-2xl relative animate-slide-up sm:animate-in sm:zoom-in-95">
-          <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6 sm:hidden" />
-          <button onClick={() => { haptic.light(); onClose(); }} className="absolute top-4 right-4 text-zinc-500 hover:text-white hidden sm:block"><X size={20} /></button>
+      <Model
+        onClose={onClose}
+        zIndexClass="z-[60]"
+        layout="bottom"
+        showMobileHandle
+        contentClassName="bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 sm:rounded-2xl p-6 sm:pb-6 pb-12 animate-slide-up sm:animate-in sm:zoom-in-95"
+      >
+          <button onClick={() => { haptic.light(); onClose(); }} className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-900 dark:hover:text-white hidden sm:block"><X size={20} /></button>
 
           <div className="flex items-center gap-2 mb-2 text-primary-400">
             <Clock size={18} className="animate-pulse" />
             <span className="text-xs font-bold uppercase tracking-[0.2em]">Efficiency Detected</span>
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2 font-display">Momentum Shift</h2>
-          <p className="text-zinc-500 text-sm mb-6 leading-relaxed">
+          <h2 className="text-2xl font-bold text-zinc-900 dark:text-white mb-2 font-display">Momentum Shift</h2>
+          <p className="text-zinc-600 dark:text-zinc-500 text-sm mb-6 leading-relaxed">
             You finished {minutesSaved}m early. How do you want to handle this gain?
           </p>
 
@@ -161,22 +168,22 @@ export const BlockActionModal: React.FC<Props> = ({ block, appMode, onComplete, 
 
             <button
               onClick={() => { haptic.medium(); onSplit("Tactical Recovery", 'Rest'); }}
-              className="w-full flex items-center gap-3 p-4 rounded-2xl bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-700/50 active-scale transition-all text-left group"
+              className="w-full flex items-center gap-3 p-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800/50 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700/50 active-scale transition-all text-left group"
             >
               <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 group-hover:scale-110 transition-transform"><Coffee size={20} /></div>
               <div>
-                <span className="block text-white font-bold text-sm">Tactical Recovery</span>
+                <span className="block text-zinc-900 dark:text-white font-bold text-sm">Tactical Recovery</span>
                 <span className="block text-zinc-500 text-xs">Maintain current slot until {block.endTime}</span>
               </div>
             </button>
 
             <button
               onClick={() => { haptic.medium(); onSplit("System Review", 'Study'); }}
-              className="w-full flex items-center gap-3 p-4 rounded-2xl bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-700/50 active-scale transition-all text-left group"
+              className="w-full flex items-center gap-3 p-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800/50 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700/50 active-scale transition-all text-left group"
             >
               <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-400 group-hover:scale-110 transition-transform"><BookOpen size={20} /></div>
               <div>
-                <span className="block text-white font-bold text-sm">Drill Session</span>
+                <span className="block text-zinc-900 dark:text-white font-bold text-sm">Drill Session</span>
                 <span className="block text-zinc-500 text-xs">Push {minutesSaved}m into flashcards</span>
               </div>
             </button>
@@ -185,28 +192,29 @@ export const BlockActionModal: React.FC<Props> = ({ block, appMode, onComplete, 
           <button onClick={() => { haptic.light(); onComplete(); }} className="w-full mt-6 py-3 text-xs text-zinc-500 font-bold uppercase tracking-widest active-dim">
             Just mark as complete
           </button>
-        </div>
-      </div>
+      </Model>
     );
   }
 
   // --- STANDARD FINISH ---
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-300">
-      <div onClick={onClose} className="absolute inset-0"></div>
-      <div className="bg-zinc-900 border-t sm:border border-zinc-800 w-full max-w-md sm:rounded-2xl p-6 sm:pb-6 pb-12 shadow-2xl relative animate-slide-up sm:animate-in sm:zoom-in-95">
-        <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6 sm:hidden" />
-        <button onClick={() => { haptic.light(); onClose(); }} className="absolute top-4 right-4 text-zinc-500 hover:text-white hidden sm:block"><X size={20} /></button>
+    <Model
+      onClose={onClose}
+      zIndexClass="z-[60]"
+      layout="bottom"
+      showMobileHandle
+      contentClassName="bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 sm:rounded-2xl p-6 sm:pb-6 pb-12 animate-slide-up sm:animate-in sm:zoom-in-95"
+    >
+      <button onClick={() => { haptic.light(); onClose(); }} className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-900 dark:hover:text-white hidden sm:block"><X size={20} /></button>
 
-        <h3 className="text-white font-bold mb-2 text-xl font-display">Mark as Complete?</h3>
-        <p className="text-zinc-400 text-sm mb-6 leading-relaxed">{block.activityName}</p>
-        <div className="flex gap-3">
-          <button onClick={() => { haptic.light(); onClose(); }} className="flex-1 py-4 rounded-2xl bg-zinc-800 text-zinc-300 font-medium active-scale">Cancel</button>
-          <button onClick={() => { haptic.success(); onComplete(); }} className="flex-1 py-4 rounded-2xl bg-primary-600 text-white font-bold active-scale flex items-center justify-center gap-2">
-            <CheckCircle2 size={18} /> Confirm
-          </button>
-        </div>
+      <h3 className="text-zinc-900 dark:text-white font-bold mb-2 text-xl font-display">Mark as Complete?</h3>
+      <p className="text-zinc-600 dark:text-zinc-400 text-sm mb-6 leading-relaxed">{block.activityName}</p>
+      <div className="flex gap-3">
+        <button onClick={() => { haptic.light(); onClose(); }} className="flex-1 py-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-medium active-scale">Cancel</button>
+        <button onClick={() => { haptic.success(); onComplete(); }} className="flex-1 py-4 rounded-2xl bg-primary-600 text-white font-bold active-scale flex items-center justify-center gap-2">
+          <CheckCircle2 size={18} /> Confirm
+        </button>
       </div>
-    </div>
+    </Model>
   );
 };

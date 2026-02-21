@@ -38,6 +38,7 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
 
   // UI States
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+  const editingBlock = editingBlockId ? template.find(b => b.id === editingBlockId) : null;
 
   // Strategy Recommendations
   const [recommendations, setRecommendations] = useState<{ subject: Subject, count: number, score: number }[]>([]);
@@ -58,12 +59,23 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
     subjects.forEach(s => counts[s.id] = 0);
 
     history.forEach(day => {
-      if (day.selectedSubjects.main1) counts[day.selectedSubjects.main1] = (counts[day.selectedSubjects.main1] || 0) + 1;
-      if (day.selectedSubjects.main2) counts[day.selectedSubjects.main2] = (counts[day.selectedSubjects.main2] || 0) + 1;
-      if (day.selectedSubjects.light) counts[day.selectedSubjects.light] = (counts[day.selectedSubjects.light] || 0) + 0.5;
+      const uniqueIds = Array.from(new Set([
+        day.selectedSubjects.main1,
+        day.selectedSubjects.main2,
+        day.selectedSubjects.light,
+        ...(day.additionalSubjects || []),
+      ].filter(Boolean) as string[]));
+      uniqueIds.forEach(id => {
+        counts[id] = (counts[id] || 0) + 1;
+      });
     });
 
-    const currentSelection = [dayLog.selectedSubjects.main1, dayLog.selectedSubjects.main2, dayLog.selectedSubjects.light];
+    const currentSelection = Array.from(new Set([
+      dayLog.selectedSubjects.main1,
+      dayLog.selectedSubjects.main2,
+      dayLog.selectedSubjects.light,
+      ...(dayLog.additionalSubjects || []),
+    ].filter(Boolean) as string[]));
 
     const ranked = subjects
       .filter(s => !currentSelection.includes(s.id))
@@ -100,9 +112,9 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl animate-in slide-in-from-right duration-300 overflow-y-auto">
-      {editingBlockId && (
+      {editingBlock && (
         <EditBlockModal
-          block={template.find(b => b.id === editingBlockId)!}
+          block={editingBlock}
           onSave={handleSaveTemplateBlock}
           onClose={() => setEditingBlockId(null)}
         />
@@ -110,7 +122,7 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
 
       <div className="max-w-md mx-auto min-h-full p-6 pb-24">
         <header className="flex items-center gap-4 mb-8">
-          <button onClick={() => { haptic.light(); onClose(); }} className="p-2 bg-zinc-100 dark:bg-zinc-900 rounded-full text-zinc-500 hover:text-black dark:hover:text-white transition-colors active-scale">
+          <button title="Close Settings" onClick={() => { haptic.light(); onClose(); }} className="p-2 bg-zinc-100 dark:bg-zinc-900 rounded-full text-zinc-500 hover:text-black dark:hover:text-white transition-colors active-scale">
             <ArrowLeft size={20} />
           </button>
           <div>

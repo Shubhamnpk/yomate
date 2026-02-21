@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ArrowRight, User, Sparkles, Target, CheckCircle2, Zap, Smartphone, Moon, ShieldCheck } from 'lucide-react';
+import { ArrowRight, User, Sparkles, Target, CheckCircle2, Zap, Smartphone, Moon, ShieldCheck, GraduationCap, Monitor, PenTool } from 'lucide-react';
 import { AppSettings, Subject } from '../types';
 import { haptic } from '../services/hapticService';
 import { saveAppSettings, saveCustomSubjects } from '../services/storageService';
@@ -136,10 +136,10 @@ export const Onboarding: React.FC<Props> = ({ onComplete, settings }) => {
 
                         <div className="grid grid-cols-1 gap-3">
                             {[
-                                { label: 'Academic Excellence', val: 'Exams & Mastery', icon: '🎓' },
-                                { label: 'Software Mastery', val: 'Coding & Shipping', icon: '💻' },
-                                { label: 'Creative Builder', val: 'Creating & Designing', icon: '🎨' },
-                                { label: 'Pure Performance', val: 'General Productivity', icon: '⚡' },
+                                { label: 'Academic Excellence', val: 'Exams & Mastery', icon: GraduationCap },
+                                { label: 'Software Mastery', val: 'Coding & Shipping', icon: Monitor },
+                                { label: 'Creative Builder', val: 'Creating & Designing', icon: PenTool },
+                                { label: 'Pure Performance', val: 'General Productivity', icon: Zap },
                             ].map((opt) => (
                                 <button
                                     key={opt.label}
@@ -147,7 +147,9 @@ export const Onboarding: React.FC<Props> = ({ onComplete, settings }) => {
                                     className={`p-4 rounded-2xl border-2 flex items-center gap-4 transition-all text-left ${goal === opt.val ? 'bg-primary-600 border-primary-500 shadow-lg shadow-primary-900/20 text-white' : `${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'} hover:border-zinc-700`
                                         }`}
                                 >
-                                    <span className="text-2xl">{opt.icon}</span>
+                                    <span className="p-2 rounded-lg bg-black/10">
+                                        <opt.icon size={18} />
+                                    </span>
                                     <div>
                                         <p className={`font-bold ${goal === opt.val ? 'text-white' : textTitle}`}>{opt.label}</p>
                                         <p className={`text-xs ${goal === opt.val ? 'text-white/70' : 'text-zinc-400'}`}>{opt.val}</p>
@@ -275,3 +277,5 @@ export const Onboarding: React.FC<Props> = ({ onComplete, settings }) => {
         </div>
     );
 };
+
+

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { DayLog, Subject } from '../types';
+import { DayLog, Subject, FocusSession } from '../types';
 import { saveLog, getAppSettings, getCustomSubjects } from '../services/storageService';
 import { playNoise, stopNoise, playSuccessTink, playAscensionSound, NoiseType } from '../services/audioGen';
 import { Play, Square, Smartphone, Check, Ban, Plus, Timer, Brain, Coffee, Volume2, ListTodo, X, Eye, EyeOff, Tag, Sparkles } from 'lucide-react';
@@ -16,7 +16,7 @@ interface Props {
 }
 
 type FocusMode = 'DEEP' | 'POMODORO';
-type TimerState = 'IDLE' | 'RUNNING';
+type TimerState = 'IDLE' | 'RUNNING' | 'PAUSED';
 type PomoPhase = 'WORK' | 'SHORT_BREAK' | 'LONG_BREAK';
 
 const NOISE_THEMES: Record<NoiseType, { bg: string, accent: string, glow: string }> = {
@@ -38,7 +38,7 @@ const SUCCESS_TITLES = [
   "Peak Protocol Meta"
 ];
 
-export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', scheduledEnd = null }) => {
+export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialTask = '', scheduledEnd = null }) => {
   const [timerState, setTimerState] = useState<TimerState>('IDLE');
   const [focusMode, setFocusMode] = useState<FocusMode>('DEEP');
 
@@ -79,6 +79,7 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
   const pomoCountRef = useRef(pomoCount);
   const totalTimeRef = useRef(totalTime);
   const sessionTaskRef = useRef(sessionTask);
+  const sessionStartRef = useRef<{ startedAt: string; startingViolations: number } | null>(null);
 
   // Load defaults
   useEffect(() => {
@@ -123,6 +124,36 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
     };
   }, []);
 
+  useEffect(() => {
+    const handleFocusToggle = () => {
+      if (phoneState === 'danger') return;
+      if (timerState === 'RUNNING') {
+        pauseSession();
+        return;
+      }
+      if (timerState === 'PAUSED') {
+        resumeSession();
+        return;
+      }
+      if (phoneState === 'safe') {
+        startSession();
+      }
+    };
+
+    const handleEscape = () => {
+      setShowAbortModal(false);
+      setShowSuccessModal(false);
+      setShowBrainDumpModal(false);
+    };
+
+    window.addEventListener('focus-toggle', handleFocusToggle);
+    window.addEventListener('app-escape', handleEscape);
+    return () => {
+      window.removeEventListener('focus-toggle', handleFocusToggle);
+      window.removeEventListener('app-escape', handleEscape);
+    };
+  }, [timerState, phoneState, activeNoise, selectedDuration, focusMode, pomoPhase, sessionTask]);
+
   // --- AUDIO & HELPERS ---
   const toggleNoise = () => {
     const modes: NoiseType[] = ['off', 'rain', 'river', 'wind', 'ocean', 'forest', 'campfire'];
@@ -166,12 +197,45 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
     setSubTasks(subTasks.filter((_, i) => i !== idx));
   };
 
+  const normalizeTask = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+  const findMatchedSubject = (task: string, allSubjects: Subject[]) => {
+    const cleanedTask = normalizeTask(task);
+    if (!cleanedTask) return null;
+
+    const exact = allSubjects.find(s => normalizeTask(s.name) === cleanedTask);
+    if (exact) return exact;
+
+    const loose = allSubjects.find(s => {
+      const normalizedName = normalizeTask(s.name);
+      return cleanedTask.includes(normalizedName) || normalizedName.includes(cleanedTask);
+    });
+    if (loose) return loose;
+
+    if (cleanedTask.includes('coding')) {
+      return allSubjects.find(s => s.category === 'Coding') || null;
+    }
+    if (cleanedTask.includes('read')) {
+      return allSubjects.find(s => normalizeTask(s.name).includes('read')) || null;
+    }
+
+    return null;
+  };
+
   const saveQuickNote = () => {
     if (!quickNote.trim()) return;
     const currentLog = logRef.current;
+    const existing = currentLog.scratchpad || '';
+    const hasHtml = /<\/?[a-z][\s\S]*>/i.test(existing);
+    const safeNote = quickNote
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
     const newLog = {
       ...currentLog,
-      scratchpad: currentLog.scratchpad ? `${currentLog.scratchpad}\n- [DeepWork] ${quickNote}` : `- [DeepWork] ${quickNote}`
+      scratchpad: hasHtml
+        ? `${existing}<p>[DeepWork] ${safeNote}</p>`
+        : (existing ? `${existing}\n- [DeepWork] ${quickNote}` : `- [DeepWork] ${quickNote}`)
     };
     saveLog(currentLog.date, newLog);
     refreshLog();
@@ -191,6 +255,12 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
     }
 
     const durationSec = durationMinutes * 60;
+    if (!sessionStartRef.current) {
+      sessionStartRef.current = {
+        startedAt: new Date().toISOString(),
+        startingViolations: logRef.current.phoneViolations || 0,
+      };
+    }
     setTotalTime(durationSec);
     setTimeLeft(durationSec);
     setTimerState('RUNNING');
@@ -212,6 +282,32 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
         return prev - 1;
       });
     }, 1000);
+  };
+
+  const pauseSession = () => {
+    if (intervalRef.current) window.clearInterval(intervalRef.current);
+    intervalRef.current = null;
+    stopNoise();
+    setTimerState('PAUSED');
+    haptic.light();
+  };
+
+  const resumeSession = () => {
+    setTimerState('RUNNING');
+    if (activeNoise !== 'off') {
+      playNoise(activeNoise);
+    }
+    if (intervalRef.current) window.clearInterval(intervalRef.current);
+    intervalRef.current = window.setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          finishTimer();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    haptic.light();
   };
 
   const skipPhase = () => {
@@ -304,21 +400,47 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
     // Subject Tracking Logic
     const currentTask = sessionTaskRef.current;
     const allSubjects = getCustomSubjects();
-    const matchedSubject = allSubjects.find(s => s.name === currentTask);
+    const matchedSubject = findMatchedSubject(currentTask, allSubjects);
     const updatedSubjectMinutes = { ...(currentLog.subjectMinutes || {}) };
+    const slotIds = [currentLog.selectedSubjects.main1, currentLog.selectedSubjects.main2, currentLog.selectedSubjects.light].filter(Boolean) as string[];
+    const existingAdditional = currentLog.additionalSubjects || [];
+    let updatedAdditionalSubjects = existingAdditional;
 
     if (matchedSubject && isWorkPhase) {
       updatedSubjectMinutes[matchedSubject.id] = (updatedSubjectMinutes[matchedSubject.id] || 0) + minutesDone;
+      if (!slotIds.includes(matchedSubject.id) && !existingAdditional.includes(matchedSubject.id)) {
+        updatedAdditionalSubjects = [...existingAdditional, matchedSubject.id];
+      }
     }
 
     const newLog = {
       ...currentLog,
       deepWorkMinutes: currentLog.deepWorkMinutes + (isWorkPhase ? minutesDone : 0),
       subjectMinutes: updatedSubjectMinutes,
-      schedule: currentLog.schedule.map(b => b.mode === 'Deep Work' ? { ...b, isCompleted: true } : b)
+      additionalSubjects: updatedAdditionalSubjects,
+      schedule: currentLog.schedule.map(b => b.mode === 'Deep Work' ? { ...b, isCompleted: true } : b),
+      focusSessions: (() => {
+        const prev = currentLog.focusSessions || [];
+        const startMeta = sessionStartRef.current;
+        const startedAt = startMeta?.startedAt || new Date(Date.now() - currentTotalTime * 1000).toISOString();
+        const currentViolations = currentLog.phoneViolations || 0;
+        const baseViolations = startMeta?.startingViolations || 0;
+        const session: FocusSession = {
+          id: `session_${Date.now()}`,
+          startAt: startedAt,
+          endAt: new Date().toISOString(),
+          durationMinutes: minutesDone,
+          taskName: currentTask || 'General Focus',
+          noiseType: activeNoise,
+          mode: currentFocusMode,
+          phoneViolationsDuringSession: Math.max(0, currentViolations - baseViolations),
+        };
+        return [...prev, session];
+      })()
     };
 
     saveLog(currentLog.date, newLog);
+    sessionStartRef.current = null;
     refreshLog();
 
     setLastSessionMins(minutesDone);
@@ -342,6 +464,7 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
     intervalRef.current = null;
     setTimerState('IDLE');
     stopNoise();
+    sessionStartRef.current = null;
     setShowAbortModal(false);
   };
 
@@ -361,25 +484,25 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
     return (
       <div className="flex flex-col h-full px-6 py-10 animate-in zoom-in-95 duration-300 overflow-y-auto">
         <div className="flex-1 flex flex-col justify-center items-center text-center">
-          <div className="w-20 h-20 bg-zinc-900 rounded-2xl flex items-center justify-center mb-8 shadow-2xl border border-zinc-800 rotate-3">
-            <Smartphone className="text-zinc-400" size={40} />
+          <div className="w-20 h-20 bg-white dark:bg-zinc-900 rounded-2xl flex items-center justify-center mb-8 shadow-2xl border border-zinc-200 dark:border-zinc-800 rotate-3">
+            <Smartphone className="text-zinc-500 dark:text-zinc-400" size={40} />
           </div>
-          <h2 className="text-3xl font-bold text-white mb-3">Device Check</h2>
-          <p className="text-zinc-500 mb-10 max-w-[280px] leading-relaxed">
+          <h2 className="text-3xl font-bold text-zinc-900 dark:text-white mb-3">Device Check</h2>
+          <p className="text-zinc-600 dark:text-zinc-500 mb-10 max-w-[280px] leading-relaxed">
             Distraction is the enemy of depth. Where is your phone?
           </p>
 
           <div className="space-y-3 w-full max-w-sm">
-            <button onClick={() => handlePhoneCheck('room')} className="group w-full p-5 bg-zinc-900/50 border border-zinc-800 hover:border-emerald-500/50 hover:bg-emerald-950/10 rounded-2xl transition-all flex items-center justify-between">
-              <span className="font-semibold text-zinc-300 group-hover:text-emerald-400">Another Room</span>
+            <button onClick={() => handlePhoneCheck('room')} className="group w-full p-5 bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-500/50 hover:bg-emerald-500/10 dark:hover:bg-emerald-950/10 rounded-2xl transition-all flex items-center justify-between">
+              <span className="font-semibold text-zinc-700 dark:text-zinc-300 group-hover:text-emerald-500">Another Room</span>
               <Check size={20} className="opacity-0 group-hover:opacity-100 text-emerald-500 transition-opacity" />
             </button>
-            <button onClick={() => handlePhoneCheck('desk')} className="group w-full p-5 bg-zinc-900/50 border border-zinc-800 hover:border-blue-500/50 hover:bg-blue-950/10 rounded-2xl transition-all flex items-center justify-between">
-              <span className="font-semibold text-zinc-300 group-hover:text-blue-400">On Desk (Airplane)</span>
+            <button onClick={() => handlePhoneCheck('desk')} className="group w-full p-5 bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 hover:border-blue-500/50 hover:bg-blue-500/10 dark:hover:bg-blue-950/10 rounded-2xl transition-all flex items-center justify-between">
+              <span className="font-semibold text-zinc-700 dark:text-zinc-300 group-hover:text-blue-500">On Desk (Airplane)</span>
               <Check size={20} className="opacity-0 group-hover:opacity-100 text-blue-500 transition-opacity" />
             </button>
-            <button onClick={() => handlePhoneCheck('hand')} className="group w-full p-5 bg-zinc-900/50 border border-zinc-800 hover:border-rose-500/50 hover:bg-rose-950/10 rounded-2xl transition-all flex items-center justify-between">
-              <span className="font-semibold text-zinc-300 group-hover:text-rose-400">In My Hand</span>
+            <button onClick={() => handlePhoneCheck('hand')} className="group w-full p-5 bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 hover:border-rose-500/50 hover:bg-rose-500/10 dark:hover:bg-rose-950/10 rounded-2xl transition-all flex items-center justify-between">
+              <span className="font-semibold text-zinc-700 dark:text-zinc-300 group-hover:text-rose-500">In My Hand</span>
               <Ban size={20} className="opacity-0 group-hover:opacity-100 text-rose-500 transition-opacity" />
             </button>
           </div>
@@ -390,17 +513,17 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
 
   if (phoneState === 'danger') {
     return (
-      <div className="h-full flex flex-col justify-center items-center text-center bg-red-950/20 p-6 animate-in shake">
+      <div className="h-full flex flex-col justify-center items-center text-center bg-rose-100/60 dark:bg-red-950/20 p-6 animate-in shake">
         <div className="w-24 h-24 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
           <Ban size={48} className="text-red-500" />
         </div>
         <h2 className="text-2xl font-bold text-red-400 mb-3">Distraction Detected</h2>
-        <p className="text-zinc-400 mb-8 max-w-xs leading-relaxed">
+        <p className="text-zinc-600 dark:text-zinc-400 mb-8 max-w-xs leading-relaxed">
           You are negotiating with mediocrity. Put the device away and reclaim your focus.
         </p>
         <button
           onClick={() => setPhoneState('unchecked')}
-          className="px-10 py-4 bg-zinc-900 rounded-full border border-zinc-700 text-white font-semibold hover:bg-zinc-800 transition-colors"
+          className="px-10 py-4 bg-zinc-900 dark:bg-zinc-900 rounded-full border border-zinc-700 text-white font-semibold hover:bg-zinc-800 transition-colors"
         >
           Try Again
         </button>
@@ -416,7 +539,7 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
             <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]"></div>
             <span className="text-emerald-500 text-xs font-mono tracking-widest uppercase">Environment Secure</span>
           </div>
-          <h2 className="text-4xl font-bold text-white tracking-tight">Initiate Focus</h2>
+          <h2 className="text-4xl font-bold text-zinc-900 dark:text-white tracking-tight">Initiate Focus</h2>
         </div>
 
         {/* Focus Mode */}
@@ -426,7 +549,7 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
             className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all duration-300
               ${focusMode === 'DEEP'
                 ? 'bg-primary-600 border-primary-500 text-white shadow-lg shadow-primary-900/30'
-                : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:bg-zinc-800'}`}
+                : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
           >
             <Brain size={24} />
             <span className="text-sm font-bold">Deep Work</span>
@@ -437,7 +560,7 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
             className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all duration-300
               ${focusMode === 'POMODORO'
                 ? 'bg-rose-600 border-rose-500 text-white shadow-lg shadow-rose-900/30'
-                : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:bg-zinc-800'}`}
+                : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
           >
             <Timer size={24} />
             <span className="text-sm font-bold">Pomodoro</span>
@@ -462,7 +585,7 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
                   className={`whitespace-nowrap px-3 py-1.5 rounded-lg border text-xs font-medium transition-all shrink-0
                     ${sessionTask === sub.name
                       ? 'bg-primary-500/20 border-primary-500 text-primary-300 shadow-[0_0_10px_rgb(var(--primary)/0.2)]'
-                      : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'}`}
+                      : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-200'}`}
                 >
                   {sub.name}
                 </button>
@@ -474,13 +597,14 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
             <input
               type="text"
               placeholder={focusMode === 'DEEP' ? "e.g. Master Redux" : "e.g. Clear Inbox"}
-              className="w-full bg-zinc-900/50 border-b-2 border-zinc-800 py-3 pl-3 pr-10 text-xl text-white outline-none focus:border-white transition-colors placeholder-zinc-700"
+              className="w-full bg-white dark:bg-zinc-900/50 border-b-2 border-zinc-300 dark:border-zinc-800 py-3 pl-3 pr-10 text-xl text-zinc-900 dark:text-white outline-none focus:border-zinc-900 dark:focus:border-white transition-colors placeholder-zinc-500 dark:placeholder-zinc-700"
               value={sessionTask}
               onChange={(e) => setSessionTask(e.target.value)}
             />
             {sessionTask && (
               <button
                 onClick={() => setSessionTask('')}
+                title="Clear Task"
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400"
               >
                 <X size={16} />
@@ -500,9 +624,9 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
 
           <div className="space-y-2 mb-2">
             {subTasks.map((task, i) => (
-              <div key={i} className="flex justify-between items-center p-2 bg-zinc-900 rounded-lg text-sm text-zinc-300 border border-zinc-800/50 animate-in slide-in-from-left-2">
+              <div key={i} className="flex justify-between items-center p-2 bg-zinc-100 dark:bg-zinc-900 rounded-lg text-sm text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800/50 animate-in slide-in-from-left-2">
                 <span>{task}</span>
-                <button onClick={() => removeSubTask(i)} className="text-zinc-600 hover:text-white"><X size={14} /></button>
+                <button title="Remove Subtask" onClick={() => removeSubTask(i)} className="text-zinc-500 dark:text-zinc-600 hover:text-zinc-900 dark:hover:text-white"><X size={14} /></button>
               </div>
             ))}
           </div>
@@ -513,9 +637,9 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
               onChange={(e) => setNewSubTask(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addSubTask()}
               placeholder="Add micro-task..."
-              className="flex-1 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white focus:border-zinc-600 outline-none"
+              className="flex-1 bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-white focus:border-zinc-500 dark:focus:border-zinc-600 outline-none"
             />
-            <button onClick={addSubTask} className="bg-zinc-800 p-2 rounded-lg text-white hover:bg-zinc-700"><Plus size={16} /></button>
+            <button title="Add Subtask" onClick={addSubTask} className="bg-zinc-900 dark:bg-zinc-800 p-2 rounded-lg text-white hover:bg-zinc-700"><Plus size={16} /></button>
           </div>
         </div>
 
@@ -529,11 +653,12 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
             {focusMode === 'POMODORO' ? (
               <select
                 value={pomoPhase}
+                title={pomoPhase === 'WORK' ? 'Focus Phase: 25 minutes of deep work' : pomoPhase === 'SHORT_BREAK' ? 'Short Break: 5 minutes of rest' : 'Long Break: 15 minutes of rest'}
                 onChange={(e) => {
                   haptic.light();
                   setPomoPhase(e.target.value as PomoPhase);
                 }}
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-rose-500/50 outline-none appearance-none font-mono text-sm active-scale transition-all"
+                className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:border-rose-500/50 outline-none appearance-none font-mono text-sm active-scale transition-all"
               >
                 <option value="WORK">Work (25m)</option>
                 <option value="SHORT_BREAK">Short Break (5m)</option>
@@ -542,11 +667,12 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
             ) : (
               <select
                 value={selectedDuration}
+                title={`Focus Duration: ${selectedDuration} minutes`}
                 onChange={(e) => {
                   haptic.light();
                   setSelectedDuration(Number(e.target.value));
                 }}
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-primary-500/50 outline-none appearance-none font-mono text-sm active-scale transition-all"
+                className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:border-primary-500/50 outline-none appearance-none font-mono text-sm active-scale transition-all"
               >
                 <option value={15}>15 Minutes</option>
                 <option value={30}>30 Minutes</option>
@@ -563,7 +689,7 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
             <label className="text-xs text-zinc-500 uppercase font-bold tracking-wider mb-2 block">Soundscape</label>
             <button
               onClick={() => { haptic.light(); toggleNoise(); }}
-              className={`w-full flex items-center justify-between p-3 rounded-xl border text-sm transition-all active-scale shadow-sm ${activeNoise !== 'off' ? 'bg-primary-500/10 border-primary-500/30 text-primary-300' : 'bg-zinc-900 border-zinc-800 text-zinc-400'}`}
+              className={`w-full flex items-center justify-between p-3 rounded-xl border text-sm transition-all active-scale shadow-sm ${activeNoise !== 'off' ? 'bg-primary-500/10 border-primary-500/30 text-primary-400' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400'}`}
             >
               <div className="flex flex-col items-start">
                 <span className="text-[10px] font-bold uppercase tracking-wider opacity-50 mb-0.5">Mode</span>
@@ -655,7 +781,10 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
               {focusMode === 'DEEP' ? 'Deep Work' : pomoPhase === 'WORK' ? `Pomodoro (${pomoCount + 1}/4)` : 'Break Time'}
             </span>
           </div>
-          <h3 className="text-zinc-200 text-xl font-medium text-center line-clamp-2 max-w-[80%] mb-4">{pomoPhase === 'WORK' ? sessionTask : 'Time to Recharge'}</h3>
+          <h3 className="text-zinc-200 text-xl font-medium text-center line-clamp-2 max-w-[80%] mb-2">{pomoPhase === 'WORK' ? sessionTask : 'Time to Recharge'}</h3>
+          {timerState === 'PAUSED' && (
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-400">Paused</span>
+          )}
 
           {/* Active Manual Phase Switcher (Timer Screen) */}
           {focusMode === 'POMODORO' && (
@@ -946,4 +1075,4 @@ export const DeepWork: React.FC<Props> = ({ log, refreshLog, initialTask = '', s
       )}
     </div>
   );
-};
+});

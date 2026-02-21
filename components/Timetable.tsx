@@ -1,8 +1,9 @@
 
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { DayLog, ScheduleBlock, AppMode } from '../types';
-import { updateScheduleStatus, updateScheduleBlock, splitBlockInSchedule, shiftScheduleForward, getAppSettings, getYesterdayLog, saveLog, getStreak } from '../services/storageService';
+import { DayLog, ScheduleBlock, AppMode, DateSystem } from '../types';
+import { updateScheduleStatus, updateScheduleBlock, splitBlockInSchedule, shiftScheduleForward, getAppSettings, getYesterdayLog, saveLog, getStreak, isBlockScheduledForDay } from '../services/storageService';
 import { formatTo12h, isTimeInRange, getMinutesDiff } from '../services/timeService';
+import { formatDateBySystem } from '../services/dateDisplay';
 import { SubjectManager } from './SubjectManager';
 import { EditBlockModal } from './EditBlockModal';
 import { BlockActionModal } from './BlockActionModal';
@@ -20,7 +21,7 @@ interface Props {
   currentTime: string; // Lifted state
 }
 
-export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, currentTime }) => {
+export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refreshApp, currentTime }) => {
   const [showStrategy, setShowStrategy] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showBrainDump, setShowBrainDump] = useState(false);
@@ -30,6 +31,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
   const [streak, setStreak] = useState(0);
   const [userName, setUserName] = useState('Student');
   const [rituals, setRituals] = useState<string[]>([]);
+  const [dateSystem, setDateSystem] = useState<DateSystem>('ENGLISH');
 
   // New: Insight State
   const [yesterdayInsight, setYesterdayInsight] = useState<string | null>(null);
@@ -42,19 +44,27 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
   const [clickedBlock, setClickedBlock] = useState<ScheduleBlock | null>(null);
   const [allSubjects, setAllSubjects] = useState(getCustomSubjects());
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
+  const dayOfWeek = useMemo(() => {
+    const [y, m, d] = log.date.split('-').map(Number);
+    return new Date(y, m - 1, d).getDay();
+  }, [log.date]);
+  const visibleSchedule = useMemo(
+    () => log.schedule.filter(b => isBlockScheduledForDay(b, dayOfWeek, log.date)),
+    [log.schedule, dayOfWeek, log.date]
+  );
 
   // Refs for scrolling
   const activeBlockRef = useRef<HTMLDivElement | null>(null);
 
   // Detect Active Block ID
   useEffect(() => {
-    const active = log.schedule.find(b => isTimeInRange(currentTime, b.startTime, b.endTime));
+    const active = visibleSchedule.find(b => isTimeInRange(currentTime, b.startTime, b.endTime));
     if (active && active.id !== activeBlockId) {
       setActiveBlockId(active.id);
     } else if (!active && activeBlockId) {
       setActiveBlockId(null);
     }
-  }, [currentTime, log.schedule]);
+  }, [currentTime, visibleSchedule, activeBlockId]);
 
   // STRICT AUTO-SCROLL to Center
   useEffect(() => {
@@ -76,6 +86,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
     setStreak(getStreak());
     setUserName(settings.userName || 'Student');
     setRituals(settings.rituals || []);
+    setDateSystem(settings.dateSystem || 'ENGLISH');
 
     const yesterday = getYesterdayLog();
     if (yesterday && yesterday.reflection.fixForTomorrow) {
@@ -103,11 +114,24 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
 
   }, [showSettings]);
 
+  useEffect(() => {
+    const handleEscape = () => {
+      setShowStrategy(false);
+      setShowSettings(false);
+      setShowBrainDump(false);
+      setSelectedBlockId(null);
+      setClickedBlock(null);
+      setEditMode(false);
+    };
+    window.addEventListener('app-escape', handleEscape);
+    return () => window.removeEventListener('app-escape', handleEscape);
+  }, []);
+
   // --- NEXT BLOCK LOGIC (Sleep/Break Detection) ---
   const { nextBlock, isSleep, timeUntil } = useMemo(() => {
     if (activeBlockId) return { nextBlock: null, isSleep: false, timeUntil: '' };
 
-    const sorted = [...log.schedule].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const sorted = [...visibleSchedule].sort((a, b) => a.startTime.localeCompare(b.startTime));
     if (sorted.length === 0) return { nextBlock: null, isSleep: false, timeUntil: '' };
 
     const nextIndex = sorted.findIndex(b => b.startTime > currentTime);
@@ -141,7 +165,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
 
     return { nextBlock: targetBlock, isSleep: isSleepPhase, timeUntil: timeString };
 
-  }, [log.schedule, currentTime, activeBlockId]);
+  }, [visibleSchedule, currentTime, activeBlockId]);
 
 
   const handleBlockClick = (block: ScheduleBlock) => {
@@ -233,6 +257,11 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
     return getMinutesDiff(currentTime, end);
   };
 
+  const activeFocusBlock = useMemo(() => {
+    if (!activeBlockId) return null;
+    return visibleSchedule.find(b => b.id === activeBlockId && (b.mode === 'Study' || b.mode === 'Deep Work')) || null;
+  }, [activeBlockId, visibleSchedule]);
+
   return (
     <div className="p-5 pb-32 animate-in fade-in duration-500">
       {showSettings && (
@@ -249,7 +278,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
 
       {selectedBlockId && (
         <EditBlockModal
-          block={log.schedule.find(b => b.id === selectedBlockId)!}
+          block={visibleSchedule.find(b => b.id === selectedBlockId)!}
           onSave={handleBlockSave}
           onClose={() => setSelectedBlockId(null)}
         />
@@ -280,17 +309,17 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
             Hi, {userName}
           </h1>
           <div className="flex items-center gap-2 mt-1">
-            {streak > 0 && (
-              <div className="flex items-center gap-1 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-full animate-in zoom-in">
-                <Flame size={12} className="text-orange-500 fill-orange-500 animate-pulse" />
-                <span className="text-[10px] font-bold text-orange-500 font-mono">{streak}</span>
-              </div>
-            )}
             <p className="text-zinc-500 text-sm font-medium uppercase tracking-wide">
-              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+              {formatDateBySystem(new Date(), dateSystem, { weekday: 'short', month: 'long', day: 'numeric' })}
             </p>
             <span className="text-zinc-700 dark:text-zinc-600">•</span>
             <p className="text-primary-500 text-xs font-bold uppercase tracking-wide">{appMode} Mode</p>
+          </div>
+          <div className={`inline-flex mt-2 items-center gap-1.5 px-2.5 py-0.5 rounded-full animate-in zoom-in ${streak > 0 ? 'bg-orange-500/10 border border-orange-500/20' : 'bg-zinc-200/70 dark:bg-zinc-800/70 border border-zinc-300 dark:border-zinc-700'}`}>
+            <Flame size={12} className={streak > 0 ? 'text-orange-500 fill-orange-500 animate-pulse' : 'text-zinc-500 dark:text-zinc-400'} />
+            <span className={`text-[10px] font-bold font-mono ${streak > 0 ? 'text-orange-500' : 'text-zinc-500 dark:text-zinc-400'}`}>
+              {streak} day{streak === 1 ? '' : 's'} streak
+            </span>
           </div>
         </div>
 
@@ -309,6 +338,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
 
           <button
             onClick={() => { haptic.medium(); setShowSettings(true); }}
+            title="Settings"
             className="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-400 hover:text-black dark:hover:text-white hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-sm active-scale"
           >
             <Settings size={20} />
@@ -385,6 +415,23 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
         </div>
       )}
 
+      {activeFocusBlock && !activeFocusBlock.isCompleted && (
+        <button
+          onClick={(e) => handleQuickFocus(e, getRealActivityName(activeFocusBlock.activityName), activeFocusBlock.endTime)}
+          className="w-full mb-6 p-4 rounded-2xl border border-primary-500/30 bg-gradient-to-r from-primary-500/15 to-white dark:to-primary-500/5 hover:from-primary-500/25 dark:hover:from-primary-500/30 hover:to-primary-500/10 transition-all shadow-lg shadow-primary-900/20 flex items-center justify-between"
+        >
+          <div className="text-left">
+            <p className="text-[10px] uppercase tracking-widest font-bold text-primary-600 dark:text-primary-300">Quick Start</p>
+            <p className="text-sm font-bold text-zinc-900 dark:text-white">Launch focus for {getRealActivityName(activeFocusBlock.activityName)}</p>
+            <p className="text-[10px] text-zinc-600 dark:text-zinc-400">Ends at {formatTo12h(activeFocusBlock.endTime)}</p>
+          </div>
+          <div className="flex items-center gap-2 text-primary-600 dark:text-primary-200">
+            <Play size={16} className="fill-current" />
+            <ChevronRight size={14} />
+          </div>
+        </button>
+      )}
+
       {/* --- SLEEP / GAP PHASE UI --- */}
       {!activeBlockId && nextBlock && (
         <div className={`mb-8 p-6 rounded-3xl border shadow-xl animate-in zoom-in-95 duration-500 relative overflow-hidden
@@ -441,7 +488,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
               <p className="text-[10px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-widest mb-1">Mission Constraint (From Yesterday)</p>
               <p className="text-sm font-medium text-amber-900 dark:text-amber-100 italic">"{yesterdayInsight}"</p>
             </div>
-            <button onClick={() => setShowInsight(false)} className="text-amber-500/50 hover:text-amber-400">
+            <button title="Close Insight" onClick={() => setShowInsight(false)} className="text-amber-500/50 hover:text-amber-400">
               <X size={16} />
             </button>
           </div>
@@ -469,13 +516,14 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
       </div>
 
       <div className="relative border-l-2 border-zinc-200 dark:border-zinc-900 ml-3 space-y-6">
-        {log.schedule.map((block) => {
+        {visibleSchedule.map((block) => {
           const active = block.id === activeBlockId;
           const activityName = getRealActivityName(block.activityName);
           const progress = active ? getBlockProgress(block.startTime, block.endTime) : 0;
           const minsLeft = active ? getTimeRemaining(block.endTime) : 0;
 
           const isFocusable = (block.mode === 'Study' || block.mode === 'Deep Work') && active;
+          const isMinimizedCompleted = block.isCompleted && !editMode && !active;
 
           // If Sleep Phase, dim everything
           const isDimmed = !active && isSleep;
@@ -487,7 +535,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
               ref={active ? activeBlockRef : null}
             >
               <div
-                className={`absolute -left-[9px] top-6 w-4 h-4 rounded-full border-4 transition-all duration-500 z-10
+                className={`absolute -left-[9px] ${isMinimizedCompleted ? 'top-4' : 'top-6'} w-4 h-4 rounded-full border-4 transition-all duration-500 z-10
                 ${active
                     ? 'bg-primary-500 border-white dark:border-zinc-950 shadow-[0_0_15px_rgb(var(--primary))] scale-110'
                     : block.isCompleted
@@ -503,7 +551,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
                     : active
                       ? 'bg-gradient-to-br from-white to-zinc-50 dark:from-zinc-900 dark:to-zinc-950 border-primary-500/30 shadow-lg shadow-primary-900/10 scale-[1.02] ring-1 ring-primary-500/20'
                       : block.isCompleted
-                        ? 'bg-zinc-100/50 dark:bg-zinc-900/30 border-zinc-200 dark:border-zinc-900 opacity-60 grayscale scale-[0.98]'
+                        ? 'bg-zinc-100/70 dark:bg-zinc-900/30 border-zinc-200 dark:border-zinc-900 opacity-75 scale-[0.98]'
                         : 'bg-white dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800/50 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900/80'}
                 `}
               >
@@ -514,45 +562,61 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
                   ></div>
                 )}
 
-                <div className="relative p-5">
+                <div className={`relative ${isMinimizedCompleted ? 'p-3' : 'p-5'}`}>
                   {editMode && (
                     <div className="absolute top-3 right-3 text-primary-400 opacity-50 group-hover/card:opacity-100">
                       <Pencil size={14} />
                     </div>
                   )}
 
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-1 rounded-md transition-colors
-                        ${block.mode === 'Deep Work' ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400' :
-                          block.mode === 'Study' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
-                            block.mode === 'Human' ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' :
-                              'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'}`}>
-                        {block.mode}
-                      </span>
-                      {active && (
-                        <span className="text-[10px] font-mono text-primary-600 dark:text-primary-400 font-bold animate-pulse">
-                          {minsLeft}m left
-                        </span>
-                      )}
-                    </div>
-
-                    <span className="font-mono text-xs text-zinc-500">
-                      {formatTo12h(block.startTime)} - {formatTo12h(block.endTime)}
-                    </span>
-                  </div>
-
-                  <div className="flex items-start justify-between gap-4">
-                    <h3 className={`font-display font-medium text-lg leading-snug transition-colors ${block.isCompleted && !editMode ? 'text-zinc-400 dark:text-zinc-500 line-through' : 'text-zinc-900 dark:text-zinc-200'}`}>
-                      {activityName}
-                    </h3>
-
-                    {!editMode && (
-                      <div className={`mt-1 transition-all duration-500 ${block.isCompleted ? 'text-emerald-500 scale-110' : 'text-zinc-300 dark:text-zinc-800 group-hover/card:text-zinc-400 dark:group-hover/card:text-zinc-700'}`}>
-                        {block.isCompleted ? <CheckCircle2 size={20} className="animate-in zoom-in spin-in-12 duration-300" /> : <Circle size={20} />}
+                  {isMinimizedCompleted ? (
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="font-display font-medium text-sm text-zinc-500 dark:text-zinc-500 line-through truncate">
+                          {activityName}
+                        </h3>
+                        <p className="font-mono text-[10px] text-zinc-500 mt-1">
+                          {formatTo12h(block.startTime)} - {formatTo12h(block.endTime)}
+                        </p>
                       </div>
-                    )}
-                  </div>
+                      <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-center mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-1 rounded-md transition-colors
+                            ${block.mode === 'Deep Work' ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400' :
+                              block.mode === 'Study' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
+                                block.mode === 'Human' ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' :
+                                  'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'}`}>
+                            {block.mode}
+                          </span>
+                          {active && (
+                            <span className="text-[10px] font-mono text-primary-600 dark:text-primary-400 font-bold animate-pulse">
+                              {minsLeft}m left
+                            </span>
+                          )}
+                        </div>
+
+                        <span className="font-mono text-xs text-zinc-500">
+                          {formatTo12h(block.startTime)} - {formatTo12h(block.endTime)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-start justify-between gap-4">
+                        <h3 className={`font-display font-medium text-lg leading-snug transition-colors ${block.isCompleted && !editMode ? 'text-zinc-400 dark:text-zinc-500 line-through' : 'text-zinc-900 dark:text-zinc-200'}`}>
+                          {activityName}
+                        </h3>
+
+                        {!editMode && (
+                          <div className={`mt-1 transition-all duration-500 ${block.isCompleted ? 'text-emerald-500 scale-110' : 'text-zinc-300 dark:text-zinc-800 group-hover/card:text-zinc-400 dark:group-hover/card:text-zinc-700'}`}>
+                            {block.isCompleted ? <CheckCircle2 size={20} className="animate-in zoom-in spin-in-12 duration-300" /> : <Circle size={20} />}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
 
                   {isFocusable && !block.isCompleted && !editMode && (
                     <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800/50 flex animate-in slide-in-from-top-2">
@@ -576,4 +640,5 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
       </div>
     </div>
   );
-};
+});
+

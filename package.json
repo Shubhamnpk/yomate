@@ -11,8 +11,11 @@
   "dependencies": {
     "@google/genai": "^1.40.0",
     "lucide-react": "0.330.0",
+    "nepali-date-converter": "^3.4.0",
+    "quill": "^2.0.3",
     "react": "18.2.0",
     "react-dom": "18.2.0",
+    "react-quill": "^2.0.0",
     "tone": "^15.1.22"
   },
   "devDependencies": {

@@ -8,14 +8,137 @@ const STORAGE_KEY = 'youmeet_data_v5';
 const TEMPLATE_KEY = 'youmeet_template_v1';
 const SUBJECTS_KEY = 'youmeet_subjects_v1';
 const SETTINGS_KEY = 'youmeet_settings_v1';
+const LOG_SAVE_DEBOUNCE_MS = 250;
+
+let logCache: Record<string, DayLog> | null = null;
+let logSaveTimer: number | null = null;
+
+const persistLogsNow = () => {
+  if (logCache === null) {
+    logSaveTimer = null;
+    return;
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(logCache || {}));
+  logSaveTimer = null;
+};
+const scheduleLogPersist = () => {
+  if (logSaveTimer) {
+    window.clearTimeout(logSaveTimer);
+  }
+  logSaveTimer = window.setTimeout(persistLogsNow, LOG_SAVE_DEBOUNCE_MS);
+};
+
+const invalidateLogCache = () => {
+  logCache = null;
+  if (logSaveTimer) {
+    window.clearTimeout(logSaveTimer);
+    logSaveTimer = null;
+  }
+};
+
+const normalizeScheduleBlock = (block: ScheduleBlock): ScheduleBlock => {
+  const normalizedDays = block.daysOfWeek && block.daysOfWeek.length > 0
+    ? Array.from(new Set(block.daysOfWeek)).sort((a, b) => a - b)
+    : undefined;
+  const normalizedDate = block.eventDate && /^\d{4}-\d{2}-\d{2}$/.test(block.eventDate)
+    ? block.eventDate
+    : undefined;
+  const normalizedEndDate = block.eventEndDate && /^\d{4}-\d{2}-\d{2}$/.test(block.eventEndDate)
+    ? block.eventEndDate
+    : undefined;
+  const computedDuration = getMinutesDiff(block.startTime, block.endTime);
+  const normalizedDuration = typeof block.durationMinutes === 'number' && block.durationMinutes > 0
+    ? Math.round(block.durationMinutes)
+    : computedDuration;
+  return {
+    ...block,
+    blockType: block.blockType || (block.mode === 'Class' ? 'EVENT' : 'TASK'),
+    daysOfWeek: normalizedDays,
+    eventDate: normalizedDate,
+    eventEndDate: normalizedEndDate,
+    durationMinutes: normalizedDuration,
+  };
+};
+
+export const isBlockScheduledForDay = (block: ScheduleBlock, dayOfWeek: number, date?: string): boolean => {
+  if (block.eventDate) {
+    if (!date) return false;
+    if (block.eventEndDate) {
+      return date >= block.eventDate && date <= block.eventEndDate;
+    }
+    return block.eventDate === date;
+  }
+  return !block.daysOfWeek || block.daysOfWeek.includes(dayOfWeek);
+};
+
+export const flushPendingLogSave = () => {
+  if (logSaveTimer) {
+    window.clearTimeout(logSaveTimer);
+    persistLogsNow();
+  }
+};
 
 export const getTodayDateString = (): string => {
   return new Date().toISOString().split('T')[0];
 };
 
+const getDateDaysAgo = (dateStr: string, daysAgo: number): string => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const d = new Date(year, month - 1, day);
+  d.setDate(d.getDate() - daysAgo);
+  return d.toISOString().split('T')[0];
+};
+
+const calculateStreakEndingAt = (logs: Record<string, DayLog>, dateStr: string): number => {
+  let streak = 0;
+  const date = new Date(dateStr);
+  while (true) {
+    const dStr = date.toISOString().split('T')[0];
+    if (logs[dStr] && logs[dStr].deepWorkMinutes > 15) {
+      streak++;
+      date.setDate(date.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+  return streak;
+};
+
+const evaluateAchievements = (logs: Record<string, DayLog>, date: string, settings: AppSettings): string[] => {
+  const log = logs[date];
+  if (!log) return [];
+
+  const unlocked = new Set<string>(log.unlockedAchievements || []);
+  const rituals = settings.rituals || [];
+
+  if (log.deepWorkMinutes >= 100) unlocked.add('FIRST_100_MIN_DAY');
+  if (calculateStreakEndingAt(logs, date) >= 7) unlocked.add('STREAK_7');
+
+  const noPhone3 = [0, 1, 2].every(offset => {
+    const dStr = getDateDaysAgo(date, offset);
+    return logs[dStr] && logs[dStr].phoneViolations === 0;
+  });
+  if (noPhone3) unlocked.add('NO_PHONE_3_DAYS');
+
+  if (rituals.length > 0) {
+    const ritualsWeek = Array.from({ length: 7 }).every((_, offset) => {
+      const dStr = getDateDaysAgo(date, offset);
+      const dLog = logs[dStr];
+      if (!dLog) return false;
+      const completed = new Set(dLog.completedRituals || []);
+      return rituals.every(r => completed.has(r));
+    });
+    if (ritualsWeek) unlocked.add('RITUALS_WEEK');
+  }
+
+  return Array.from(unlocked);
+};
+
 export const getStoredLog = (): Record<string, DayLog> => {
+  if (logCache) return logCache;
   const stored = localStorage.getItem(STORAGE_KEY);
-  return stored ? JSON.parse(stored) : {};
+  logCache = stored ? JSON.parse(stored) : {};
+  return logCache;
 };
 
 // --- SETTINGS MANAGEMENT ---
@@ -34,6 +157,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   userName: 'Student',
   themeAccent: 'indigo',
   themeMode: 'zinc',
+  dateSystem: 'ENGLISH',
   enableSounds: true,
   defaultFocusMinutes: 60,
   appMode: 'Normal',
@@ -57,11 +181,12 @@ export const saveAppSettings = (settings: AppSettings) => {
 
 export const getScheduleTemplate = (): ScheduleBlock[] => {
   const stored = localStorage.getItem(TEMPLATE_KEY);
-  return stored ? JSON.parse(stored) : JSON.parse(JSON.stringify(DEFAULT_SCHEDULE));
+  const parsed = stored ? JSON.parse(stored) : JSON.parse(JSON.stringify(DEFAULT_SCHEDULE));
+  return parsed.map((b: ScheduleBlock) => normalizeScheduleBlock(b));
 };
 
 export const saveScheduleTemplate = (schedule: ScheduleBlock[]) => {
-  localStorage.setItem(TEMPLATE_KEY, JSON.stringify(schedule));
+  localStorage.setItem(TEMPLATE_KEY, JSON.stringify(schedule.map(normalizeScheduleBlock)));
 };
 
 export const getCustomSubjects = (): Subject[] => {
@@ -76,6 +201,7 @@ export const saveCustomSubjects = (subjects: Subject[]) => {
 // --- DATA MANAGEMENT (Import/Export/Reset) ---
 
 export const exportData = () => {
+  flushPendingLogSave();
   const data = {
     logs: getStoredLog(),
     template: getScheduleTemplate(),
@@ -95,7 +221,11 @@ export const exportData = () => {
 export const importData = (jsonString: string) => {
   try {
     const data = JSON.parse(jsonString);
-    if (data.logs) localStorage.setItem(STORAGE_KEY, JSON.stringify(data.logs));
+    invalidateLogCache();
+    if (data.logs) {
+      logCache = data.logs;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data.logs));
+    }
     if (data.template) localStorage.setItem(TEMPLATE_KEY, JSON.stringify(data.template));
     if (data.subjects) localStorage.setItem(SUBJECTS_KEY, JSON.stringify(data.subjects));
     if (data.settings) localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
@@ -106,6 +236,7 @@ export const importData = (jsonString: string) => {
 };
 
 export const resetApp = () => {
+  invalidateLogCache();
   // Only clear Yomate-specific keys, not all localStorage
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(TEMPLATE_KEY);
@@ -173,8 +304,18 @@ export const getYesterdayLog = (): DayLog | null => {
 
 export const saveLog = (date: string, data: DayLog) => {
   const allLogs = getStoredLog();
-  allLogs[date] = data;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(allLogs));
+  const settings = getAppSettings();
+  const merged: DayLog = {
+    ...data,
+    schedule: (data.schedule || []).map(normalizeScheduleBlock),
+    additionalSubjects: data.additionalSubjects || [],
+    focusSessions: data.focusSessions || [],
+    unlockedAchievements: data.unlockedAchievements || [],
+  };
+  allLogs[date] = merged;
+  allLogs[date].unlockedAchievements = evaluateAchievements(allLogs, date, settings);
+  logCache = allLogs;
+  scheduleLogPersist();
 };
 
 export const initializeToday = (dryRun = false): DayLog => {
@@ -182,6 +323,7 @@ export const initializeToday = (dryRun = false): DayLog => {
   const logs = getStoredLog();
 
   if (logs[date] && !dryRun) {
+    logs[date].schedule = (logs[date].schedule || []).map(normalizeScheduleBlock);
     // Legacy support: ensure todos exist
     if (!logs[date].todos) {
       logs[date].todos = [];
@@ -195,6 +337,18 @@ export const initializeToday = (dryRun = false): DayLog => {
     // Legacy support: ensure subjectMinutes exist
     if (!logs[date].subjectMinutes) {
       logs[date].subjectMinutes = {};
+      saveLog(date, logs[date]);
+    }
+    if (!logs[date].focusSessions) {
+      logs[date].focusSessions = [];
+      saveLog(date, logs[date]);
+    }
+    if (!logs[date].unlockedAchievements) {
+      logs[date].unlockedAchievements = [];
+      saveLog(date, logs[date]);
+    }
+    if (!logs[date].additionalSubjects) {
+      logs[date].additionalSubjects = [];
       saveLog(date, logs[date]);
     }
     return logs[date];
@@ -216,6 +370,9 @@ export const initializeToday = (dryRun = false): DayLog => {
   // Weekly Plan Injection
   const dayOfWeek = new Date().getDay(); // 0-6
   const todaysPlan = settings.weeklyPlan[dayOfWeek] || { main1: null, main2: null, light: null };
+  const todaysSchedule = template
+    .filter((b) => isBlockScheduledForDay(b, dayOfWeek, date))
+    .map((b) => ({ ...b, isCompleted: false }));
 
   const newLog: DayLog = {
     date,
@@ -224,7 +381,8 @@ export const initializeToday = (dryRun = false): DayLog => {
       main2: todaysPlan.main2,
       light: todaysPlan.light
     },
-    schedule: template,
+    additionalSubjects: [],
+    schedule: todaysSchedule,
     deepWorkMinutes: 0,
     phoneViolations: 0,
     callCompleted: false,
@@ -241,7 +399,9 @@ export const initializeToday = (dryRun = false): DayLog => {
       whatWentRight: '',
       distractionWin: '',
       fixForTomorrow: '',
-    }
+    },
+    focusSessions: [],
+    unlockedAchievements: [],
   };
 
   // Look for primary objective set yesterday
@@ -306,6 +466,8 @@ export const splitBlockInSchedule = (
     endTime: originalEndTime,
     activityName: newActivityName,
     mode: newMode,
+    blockType: currentBlock.blockType || 'TASK',
+    daysOfWeek: currentBlock.daysOfWeek,
     isCompleted: false
   };
 
@@ -379,6 +541,9 @@ const initializeTodayForDate = (date: string): DayLog => {
   const settings = getAppSettings();
   const dayOfWeek = new Date(date).getDay();
   const todaysPlan = settings.weeklyPlan[dayOfWeek] || { main1: null, main2: null, light: null };
+  const todaysSchedule = template
+    .filter((b) => isBlockScheduledForDay(b, dayOfWeek, date))
+    .map((b) => ({ ...b, isCompleted: false }));
 
   return {
     date,
@@ -387,7 +552,8 @@ const initializeTodayForDate = (date: string): DayLog => {
       main2: todaysPlan.main2,
       light: todaysPlan.light
     },
-    schedule: template,
+    additionalSubjects: [],
+    schedule: todaysSchedule,
     deepWorkMinutes: 0,
     phoneViolations: 0,
     callCompleted: false,
@@ -404,7 +570,9 @@ const initializeTodayForDate = (date: string): DayLog => {
       whatWentRight: '',
       distractionWin: '',
       fixForTomorrow: '',
-    }
+    },
+    focusSessions: [],
+    unlockedAchievements: [],
   };
 };
 
