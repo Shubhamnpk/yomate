@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { DayLog, ScheduleBlock, AppMode, DateSystem } from '../types';
-import { updateScheduleStatus, updateScheduleBlock, splitBlockInSchedule, shiftScheduleForward, getAppSettings, getYesterdayLog, saveLog, getStreak } from '../services/storageService';
+import { updateScheduleStatus, updateScheduleBlock, splitBlockInSchedule, shiftScheduleForward, getAppSettings, getYesterdayLog, saveLog, getStreak, isBlockScheduledForDay } from '../services/storageService';
 import { formatTo12h, isTimeInRange, getMinutesDiff } from '../services/timeService';
 import { formatDateBySystem } from '../services/dateDisplay';
 import { SubjectManager } from './SubjectManager';
@@ -44,19 +44,27 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
   const [clickedBlock, setClickedBlock] = useState<ScheduleBlock | null>(null);
   const [allSubjects, setAllSubjects] = useState(getCustomSubjects());
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
+  const dayOfWeek = useMemo(() => {
+    const [y, m, d] = log.date.split('-').map(Number);
+    return new Date(y, m - 1, d).getDay();
+  }, [log.date]);
+  const visibleSchedule = useMemo(
+    () => log.schedule.filter(b => isBlockScheduledForDay(b, dayOfWeek, log.date)),
+    [log.schedule, dayOfWeek, log.date]
+  );
 
   // Refs for scrolling
   const activeBlockRef = useRef<HTMLDivElement | null>(null);
 
   // Detect Active Block ID
   useEffect(() => {
-    const active = log.schedule.find(b => isTimeInRange(currentTime, b.startTime, b.endTime));
+    const active = visibleSchedule.find(b => isTimeInRange(currentTime, b.startTime, b.endTime));
     if (active && active.id !== activeBlockId) {
       setActiveBlockId(active.id);
     } else if (!active && activeBlockId) {
       setActiveBlockId(null);
     }
-  }, [currentTime, log.schedule]);
+  }, [currentTime, visibleSchedule, activeBlockId]);
 
   // STRICT AUTO-SCROLL to Center
   useEffect(() => {
@@ -123,7 +131,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
   const { nextBlock, isSleep, timeUntil } = useMemo(() => {
     if (activeBlockId) return { nextBlock: null, isSleep: false, timeUntil: '' };
 
-    const sorted = [...log.schedule].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const sorted = [...visibleSchedule].sort((a, b) => a.startTime.localeCompare(b.startTime));
     if (sorted.length === 0) return { nextBlock: null, isSleep: false, timeUntil: '' };
 
     const nextIndex = sorted.findIndex(b => b.startTime > currentTime);
@@ -157,7 +165,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
 
     return { nextBlock: targetBlock, isSleep: isSleepPhase, timeUntil: timeString };
 
-  }, [log.schedule, currentTime, activeBlockId]);
+  }, [visibleSchedule, currentTime, activeBlockId]);
 
 
   const handleBlockClick = (block: ScheduleBlock) => {
@@ -251,8 +259,8 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
 
   const activeFocusBlock = useMemo(() => {
     if (!activeBlockId) return null;
-    return log.schedule.find(b => b.id === activeBlockId && (b.mode === 'Study' || b.mode === 'Deep Work')) || null;
-  }, [activeBlockId, log.schedule]);
+    return visibleSchedule.find(b => b.id === activeBlockId && (b.mode === 'Study' || b.mode === 'Deep Work')) || null;
+  }, [activeBlockId, visibleSchedule]);
 
   return (
     <div className="p-5 pb-32 animate-in fade-in duration-500">
@@ -270,7 +278,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
 
       {selectedBlockId && (
         <EditBlockModal
-          block={log.schedule.find(b => b.id === selectedBlockId)!}
+          block={visibleSchedule.find(b => b.id === selectedBlockId)!}
           onSave={handleBlockSave}
           onClose={() => setSelectedBlockId(null)}
         />
@@ -330,6 +338,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
 
           <button
             onClick={() => { haptic.medium(); setShowSettings(true); }}
+            title="Settings"
             className="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-400 hover:text-black dark:hover:text-white hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-sm active-scale"
           >
             <Settings size={20} />
@@ -479,7 +488,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
               <p className="text-[10px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-widest mb-1">Mission Constraint (From Yesterday)</p>
               <p className="text-sm font-medium text-amber-900 dark:text-amber-100 italic">"{yesterdayInsight}"</p>
             </div>
-            <button onClick={() => setShowInsight(false)} className="text-amber-500/50 hover:text-amber-400">
+            <button title="Close Insight" onClick={() => setShowInsight(false)} className="text-amber-500/50 hover:text-amber-400">
               <X size={16} />
             </button>
           </div>
@@ -507,7 +516,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
       </div>
 
       <div className="relative border-l-2 border-zinc-200 dark:border-zinc-900 ml-3 space-y-6">
-        {log.schedule.map((block) => {
+        {visibleSchedule.map((block) => {
           const active = block.id === activeBlockId;
           const activityName = getRealActivityName(block.activityName);
           const progress = active ? getBlockProgress(block.startTime, block.endTime) : 0;

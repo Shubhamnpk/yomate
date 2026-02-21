@@ -293,6 +293,24 @@ body {
     color: #e4e4e7;
 }
 
+.native-date-input {
+    color-scheme: light;
+}
+
+.dark .native-date-input {
+    color-scheme: dark;
+}
+
+.native-date-input::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.75;
+}
+
+.dark .native-date-input::-webkit-calendar-picker-indicator {
+    filter: invert(1) brightness(1.15);
+    opacity: 0.95;
+}
+
 .quill-notes .ql-editor.ql-blank::before,
 .ql-editor.ql-blank::before {
     color: #a1a1aa;

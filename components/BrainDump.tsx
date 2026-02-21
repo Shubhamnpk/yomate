@@ -5,6 +5,7 @@ import { DayLog, TodoItem } from '../types';
 import { saveLog } from '../services/storageService';
 import { X, StickyNote, Plus, CheckSquare, Square } from 'lucide-react';
 import { haptic } from '../services/hapticService';
+import { Model } from './ui/model';
 
 interface Props {
   log: DayLog;
@@ -78,10 +79,14 @@ export const BrainDump: React.FC<Props> = ({ log, onClose, refreshLog }) => {
   const quillModules = useMemo(() => (isMobileToolbar ? MOBILE_QUILL_MODULES : QUILL_MODULES), [isMobileToolbar]);
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
-      <div onClick={() => { haptic.light(); onClose(); }} className="absolute inset-0"></div>
-      <div className="w-full max-w-md bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 sm:rounded-2xl rounded-t-3xl shadow-2xl flex flex-col h-[85vh] sm:h-[70vh] overflow-hidden animate-slide-up sm:animate-in sm:zoom-in-95 relative">
-        <div className="w-12 h-1.5 bg-zinc-300 dark:bg-zinc-700 rounded-full mx-auto mt-3 mb-1 sm:hidden shrink-0" />
+    <Model
+      onClose={() => { haptic.light(); onClose(); }}
+      zIndexClass="z-[70]"
+      layout="bottom"
+      contentClassName="bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 sm:rounded-2xl rounded-t-3xl flex flex-col h-[85vh] sm:h-[70vh] overflow-hidden animate-slide-up sm:animate-in sm:zoom-in-95"
+      overlayClassName="bg-black/60 backdrop-blur-sm"
+    >
+      <div className="w-12 h-1.5 bg-zinc-300 dark:bg-zinc-700 rounded-full mx-auto mt-3 mb-1 sm:hidden shrink-0" />
 
         <div className="flex items-center justify-between p-4 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 shrink-0">
           <div className="flex items-center gap-2 text-zinc-800 dark:text-zinc-200 font-bold">
@@ -136,8 +141,6 @@ export const BrainDump: React.FC<Props> = ({ log, onClose, refreshLog }) => {
             </div>
           </div>
         </div>
-
-      </div>
-    </div>
+    </Model>
   );
 };

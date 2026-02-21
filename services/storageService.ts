@@ -36,6 +36,41 @@ const invalidateLogCache = () => {
   }
 };
 
+const normalizeScheduleBlock = (block: ScheduleBlock): ScheduleBlock => {
+  const normalizedDays = block.daysOfWeek && block.daysOfWeek.length > 0
+    ? Array.from(new Set(block.daysOfWeek)).sort((a, b) => a - b)
+    : undefined;
+  const normalizedDate = block.eventDate && /^\d{4}-\d{2}-\d{2}$/.test(block.eventDate)
+    ? block.eventDate
+    : undefined;
+  const normalizedEndDate = block.eventEndDate && /^\d{4}-\d{2}-\d{2}$/.test(block.eventEndDate)
+    ? block.eventEndDate
+    : undefined;
+  const computedDuration = getMinutesDiff(block.startTime, block.endTime);
+  const normalizedDuration = typeof block.durationMinutes === 'number' && block.durationMinutes > 0
+    ? Math.round(block.durationMinutes)
+    : computedDuration;
+  return {
+    ...block,
+    blockType: block.blockType || (block.mode === 'Class' ? 'EVENT' : 'TASK'),
+    daysOfWeek: normalizedDays,
+    eventDate: normalizedDate,
+    eventEndDate: normalizedEndDate,
+    durationMinutes: normalizedDuration,
+  };
+};
+
+export const isBlockScheduledForDay = (block: ScheduleBlock, dayOfWeek: number, date?: string): boolean => {
+  if (block.eventDate) {
+    if (!date) return false;
+    if (block.eventEndDate) {
+      return date >= block.eventDate && date <= block.eventEndDate;
+    }
+    return block.eventDate === date;
+  }
+  return !block.daysOfWeek || block.daysOfWeek.includes(dayOfWeek);
+};
+
 export const flushPendingLogSave = () => {
   if (logSaveTimer) {
     window.clearTimeout(logSaveTimer);
@@ -146,11 +181,12 @@ export const saveAppSettings = (settings: AppSettings) => {
 
 export const getScheduleTemplate = (): ScheduleBlock[] => {
   const stored = localStorage.getItem(TEMPLATE_KEY);
-  return stored ? JSON.parse(stored) : JSON.parse(JSON.stringify(DEFAULT_SCHEDULE));
+  const parsed = stored ? JSON.parse(stored) : JSON.parse(JSON.stringify(DEFAULT_SCHEDULE));
+  return parsed.map((b: ScheduleBlock) => normalizeScheduleBlock(b));
 };
 
 export const saveScheduleTemplate = (schedule: ScheduleBlock[]) => {
-  localStorage.setItem(TEMPLATE_KEY, JSON.stringify(schedule));
+  localStorage.setItem(TEMPLATE_KEY, JSON.stringify(schedule.map(normalizeScheduleBlock)));
 };
 
 export const getCustomSubjects = (): Subject[] => {
@@ -271,6 +307,7 @@ export const saveLog = (date: string, data: DayLog) => {
   const settings = getAppSettings();
   const merged: DayLog = {
     ...data,
+    schedule: (data.schedule || []).map(normalizeScheduleBlock),
     additionalSubjects: data.additionalSubjects || [],
     focusSessions: data.focusSessions || [],
     unlockedAchievements: data.unlockedAchievements || [],
@@ -286,6 +323,7 @@ export const initializeToday = (dryRun = false): DayLog => {
   const logs = getStoredLog();
 
   if (logs[date] && !dryRun) {
+    logs[date].schedule = (logs[date].schedule || []).map(normalizeScheduleBlock);
     // Legacy support: ensure todos exist
     if (!logs[date].todos) {
       logs[date].todos = [];
@@ -332,6 +370,9 @@ export const initializeToday = (dryRun = false): DayLog => {
   // Weekly Plan Injection
   const dayOfWeek = new Date().getDay(); // 0-6
   const todaysPlan = settings.weeklyPlan[dayOfWeek] || { main1: null, main2: null, light: null };
+  const todaysSchedule = template
+    .filter((b) => isBlockScheduledForDay(b, dayOfWeek, date))
+    .map((b) => ({ ...b, isCompleted: false }));
 
   const newLog: DayLog = {
     date,
@@ -341,7 +382,7 @@ export const initializeToday = (dryRun = false): DayLog => {
       light: todaysPlan.light
     },
     additionalSubjects: [],
-    schedule: template,
+    schedule: todaysSchedule,
     deepWorkMinutes: 0,
     phoneViolations: 0,
     callCompleted: false,
@@ -425,6 +466,8 @@ export const splitBlockInSchedule = (
     endTime: originalEndTime,
     activityName: newActivityName,
     mode: newMode,
+    blockType: currentBlock.blockType || 'TASK',
+    daysOfWeek: currentBlock.daysOfWeek,
     isCompleted: false
   };
 
@@ -498,6 +541,9 @@ const initializeTodayForDate = (date: string): DayLog => {
   const settings = getAppSettings();
   const dayOfWeek = new Date(date).getDay();
   const todaysPlan = settings.weeklyPlan[dayOfWeek] || { main1: null, main2: null, light: null };
+  const todaysSchedule = template
+    .filter((b) => isBlockScheduledForDay(b, dayOfWeek, date))
+    .map((b) => ({ ...b, isCompleted: false }));
 
   return {
     date,
@@ -507,7 +553,7 @@ const initializeTodayForDate = (date: string): DayLog => {
       light: todaysPlan.light
     },
     additionalSubjects: [],
-    schedule: template,
+    schedule: todaysSchedule,
     deepWorkMinutes: 0,
     phoneViolations: 0,
     callCompleted: false,

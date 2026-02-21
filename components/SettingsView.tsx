@@ -38,6 +38,7 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
 
   // UI States
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+  const editingBlock = editingBlockId ? template.find(b => b.id === editingBlockId) : null;
 
   // Strategy Recommendations
   const [recommendations, setRecommendations] = useState<{ subject: Subject, count: number, score: number }[]>([]);
@@ -111,9 +112,9 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl animate-in slide-in-from-right duration-300 overflow-y-auto">
-      {editingBlockId && (
+      {editingBlock && (
         <EditBlockModal
-          block={template.find(b => b.id === editingBlockId)!}
+          block={editingBlock}
           onSave={handleSaveTemplateBlock}
           onClose={() => setEditingBlockId(null)}
         />
