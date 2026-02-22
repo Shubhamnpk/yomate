@@ -32,10 +32,10 @@ export const Navigation: React.FC<Props> = ({ currentView, setView }) => {
                 haptic.light();
                 setView(item.id);
               }}
-              className={`relative flex flex-col items-center justify-center w-14 h-14 rounded-xl transition-all duration-300 group active-scale
+              className={`relative flex flex-col items-center justify-center w-14 h-14 rounded-xl transition-all duration-300 group active-scale border
                 ${isActive
-                  ? 'bg-primary-500/12 dark:bg-zinc-800 text-primary-700 dark:text-white border border-primary-500/25 dark:border-transparent shadow-sm dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]'
-                  : 'text-zinc-600 hover:text-zinc-900 dark:hover:text-zinc-300 hover:bg-zinc-100/80 dark:hover:bg-transparent'
+                  ? 'bg-primary-500/12 dark:bg-zinc-800 text-primary-700 dark:text-white border-primary-500/35 dark:border-zinc-700 dark: shadow-sm shadow-primary-500/10 [box-shadow:inset_0_1px_0_0_rgba(255,255,255,0.72)] dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]'
+                  : 'text-zinc-600 border-transparent hover:text-zinc-900 dark:hover:text-zinc-300 hover:bg-zinc-100/80 dark:hover:bg-transparent dark:hover:border-zinc-700/80'
                 }`}
             >
               {isActive && (

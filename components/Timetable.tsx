@@ -1,5 +1,4 @@
-
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, startTransition } from 'react';
 import { DayLog, ScheduleBlock, AppMode, DateSystem } from '../types';
 import { updateScheduleStatus, updateScheduleBlock, splitBlockInSchedule, shiftScheduleForward, getAppSettings, getYesterdayLog, saveLog, getStreak, isBlockScheduledForDay } from '../services/storageService';
 import { formatTo12h, isTimeInRange, getMinutesDiff } from '../services/timeService';
@@ -32,15 +31,9 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
   const [userName, setUserName] = useState('Student');
   const [rituals, setRituals] = useState<string[]>([]);
   const [dateSystem, setDateSystem] = useState<DateSystem>('ENGLISH');
-
-  // New: Insight State
   const [yesterdayInsight, setYesterdayInsight] = useState<string | null>(null);
   const [showInsight, setShowInsight] = useState(true);
-
-  // New: Closest Deadline
   const [deadlineInfo, setDeadlineInfo] = useState<{ title: string, days: number } | null>(null);
-
-  // Smart Interaction State
   const [clickedBlock, setClickedBlock] = useState<ScheduleBlock | null>(null);
   const [allSubjects, setAllSubjects] = useState(getCustomSubjects());
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
@@ -93,7 +86,6 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
       setYesterdayInsight(yesterday.reflection.fixForTomorrow);
     }
 
-    // Horizon: Find closest deadline
     if (settings.deadlines && settings.deadlines.length > 0) {
       const now = new Date().getTime();
       const sorted = settings.deadlines
@@ -176,33 +168,51 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
     }
   };
 
+  // Defer storage-heavy work until after the next paint to improve tap responsiveness (INP).
+  const deferInteractionWork = (fn: () => void) => {
+    window.requestAnimationFrame(() => {
+      window.setTimeout(fn, 0);
+    });
+  };
+
   const handleBlockActionComplete = () => {
     if (clickedBlock) {
-      updateScheduleStatus(clickedBlock.id, !clickedBlock.isCompleted);
-      refreshLog();
+      const block = clickedBlock;
       setClickedBlock(null);
+      deferInteractionWork(() => {
+        updateScheduleStatus(block.id, !block.isCompleted);
+        startTransition(() => refreshLog());
+      });
     }
   };
 
   const handleBlockActionSplit = (newActivity: string, mode: 'Rest' | 'Study') => {
     if (clickedBlock) {
-      splitBlockInSchedule(clickedBlock.id, newActivity, mode);
-      refreshLog();
+      const blockId = clickedBlock.id;
       setClickedBlock(null);
+      deferInteractionWork(() => {
+        splitBlockInSchedule(blockId, newActivity, mode);
+        startTransition(() => refreshLog());
+      });
     }
   };
 
   const handleBlockActionShift = () => {
     if (clickedBlock) {
-      shiftScheduleForward(clickedBlock.id);
-      refreshLog();
+      const blockId = clickedBlock.id;
       setClickedBlock(null);
+      deferInteractionWork(() => {
+        shiftScheduleForward(blockId);
+        startTransition(() => refreshLog());
+      });
     }
   };
 
   const handleBlockSave = (id: string, updates: Partial<ScheduleBlock>) => {
-    updateScheduleBlock(id, updates);
-    refreshLog();
+    deferInteractionWork(() => {
+      updateScheduleBlock(id, updates);
+      startTransition(() => refreshLog());
+    });
   };
 
   const handleQuickFocus = (e: React.MouseEvent, activityName: string, scheduledEnd?: string) => {
@@ -220,8 +230,10 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
       updated = [...current, ritual];
     }
     const newLog = { ...log, completedRituals: updated };
-    saveLog(log.date, newLog);
-    refreshLog();
+    deferInteractionWork(() => {
+      saveLog(log.date, newLog);
+      startTransition(() => refreshLog());
+    });
   };
 
   const getRealActivityName = (blockActivity: string) => {

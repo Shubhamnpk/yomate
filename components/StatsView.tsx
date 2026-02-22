@@ -360,29 +360,6 @@ export const StatsView: React.FC = React.memo(() => {
         </div>
       )}
 
-      <div className="bg-zinc-100 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
-        <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 mb-6 uppercase tracking-wider">Consistency (7 Days)</h3>
-        <div className="flex items-end justify-between h-32 gap-2">
-          {last7Days.map((log, idx) => {
-            const height = Math.min((log.deepWorkMinutes / 120) * 100, 100);
-            const dayLabel = formatDateBySystem(log.date, settings.dateSystem, { weekday: 'narrow' });
-            const isToday = idx === last7Days.length - 1;
-
-            return (
-              <div key={log.date} className="flex-1 flex flex-col items-center gap-2 group">
-                <div className="relative w-full bg-zinc-200 dark:bg-zinc-900 rounded-t-lg overflow-hidden h-full flex items-end">
-                  <div
-                    style={{ height: `${height}%` }}
-                    className={`w-full transition-all duration-1000 ${isToday ? 'bg-primary-500' : 'bg-zinc-400 dark:bg-zinc-700 group-hover:bg-zinc-500 dark:group-hover:bg-zinc-600'}`}
-                  ></div>
-                </div>
-                <span className={`text-[10px] font-mono ${isToday ? 'text-zinc-900 dark:text-white font-bold' : 'text-zinc-500 dark:text-zinc-600'}`}>{dayLabel}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-2">

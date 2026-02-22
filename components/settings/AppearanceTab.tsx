@@ -13,10 +13,13 @@ export const AppearanceTab: React.FC<Props> = ({ settings, handleSaveSettings })
     const ThemeOption = ({ color, label, selected, onClick }: any) => (
         <button
             onClick={onClick}
-            className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${selected ? 'border-zinc-400 bg-zinc-800' : 'border-transparent hover:bg-zinc-800/50'}`}
+            className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all active-scale
+                ${selected
+                    ? 'border-primary-500 bg-primary-500/10 shadow-sm'
+                    : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
         >
             <div className={`w-8 h-8 rounded-full ${color}`}></div>
-            <span className="text-[10px] font-bold uppercase text-zinc-400">{label}</span>
+            <span className={`text-[10px] font-bold uppercase ${selected ? 'text-primary-600 dark:text-primary-400' : 'text-zinc-600 dark:text-zinc-400'}`}>{label}</span>
         </button>
     );
 
