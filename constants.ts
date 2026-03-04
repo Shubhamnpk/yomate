@@ -3,12 +3,12 @@ import { Subject, ScheduleBlock } from './types';
 
 export const ALL_SUBJECTS: Subject[] = [
   // NEB Subjects
-  { id: 'neb1', name: 'Physics (NEB)', category: 'Other', priority: 'Normal' },
-  { id: 'neb2', name: 'Chemistry (NEB)', category: 'Other', priority: 'Normal' },
-  { id: 'neb3', name: 'Biology (NEB)', category: 'Other', priority: 'Normal' },
-  { id: 'neb4', name: 'Mathematics (NEB)', category: 'Other', priority: 'Normal' },
-  { id: 'neb5', name: 'English (NEB)', category: 'Other', priority: 'Normal' },
-  { id: 'neb6', name: 'Nepali (NEB)', category: 'Other', priority: 'Normal' },
+  { id: 'neb1', name: 'Physics', category: 'NEB', priority: 'Normal' },
+  { id: 'neb2', name: 'Chemistry (NEB)', category: 'NEB', priority: 'Normal' },
+  { id: 'neb3', name: 'Biology (NEB)', category: 'NEB', priority: 'Normal' },
+  { id: 'neb4', name: 'Mathematics (NEB)', category: 'NEB', priority: 'Normal' },
+  { id: 'neb5', name: 'English (NEB)', category: 'NEB', priority: 'Normal' },
+  { id: 'neb6', name: 'Nepali (NEB)', category: 'NEB', priority: 'Normal' },
 
   // Pharmacy 2nd Year - Defaults High Priority due to "Student" context
   { id: 'ph1', name: 'Pharm. Chemistry', category: 'Pharmacy', priority: 'High' },
@@ -21,7 +21,7 @@ export const ALL_SUBJECTS: Subject[] = [
   { id: 'ph8', name: 'PharmaTherapeutics', category: 'Pharmacy', priority: 'High' },
 
   // Coding
-  { id: 'code1', name: 'Coding / Dev', category: 'Coding', priority: 'High' },
+  { id: 'code1', name: 'Coding', category: 'Coding', priority: 'High' },
   { id: 'other_read', name: 'Reading', category: 'Other', priority: 'Normal' },
 ];
 
@@ -37,7 +37,7 @@ export const DEFAULT_SCHEDULE: ScheduleBlock[] = [
   // Adjusted Evening Block
   { id: 'b5', startTime: '17:00', endTime: '18:00', activityName: 'Deep Work (Coding)', mode: 'Deep Work', blockType: 'TASK', isCompleted: false },
   { id: 'b6', startTime: '18:00', endTime: '18:30', activityName: 'Dinner', mode: 'Rest', blockType: 'TASK', isCompleted: false },
-  { id: 'b7', startTime: '18:30', endTime: '19:00', activityName: 'Shop Duty', mode: 'Class', blockType: 'EVENT', daysOfWeek: [0, 1, 2, 3, 4, 5], isCompleted: false },
+  { id: 'b7', startTime: '18:30', endTime: '19:00', activityName: 'Shop Duty', mode: 'Task', blockType: 'TASK', isCompleted: false },
   
   { id: 'b8', startTime: '19:00', endTime: '21:00', activityName: 'Evening Study (Main 2)', mode: 'Study', blockType: 'TASK', isCompleted: false },
   { id: 'b9', startTime: '21:00', endTime: '22:00', activityName: 'Light Review / Journal', mode: 'Study', blockType: 'TASK', isCompleted: false },

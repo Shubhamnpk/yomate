@@ -74,7 +74,11 @@ export const NightRoutine: React.FC<Props> = React.memo(({ log, refreshLog }) =>
   const handleUpdate = (field: keyof DayLog | string, value: any) => {
     const newLog: any = { ...log };
     if (field.startsWith('ref_')) {
-      newLog.reflection[field.replace('ref_', '')] = value;
+      const reflectionKey = field.replace('ref_', '');
+      newLog.reflection[reflectionKey] = value;
+      if (reflectionKey === 'fixForTomorrow') {
+        saveTomorrowObjective(value);
+      }
     } else {
       newLog[field] = value;
     }

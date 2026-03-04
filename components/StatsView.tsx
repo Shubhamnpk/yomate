@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { getHistory, getCustomSubjects, getAppSettings } from '../services/storageService';
 import { Subject, AppSettings, DayLog } from '../types';
-import { BarChart3, AlertTriangle, CheckCircle, GraduationCap, Flag, Milestone, AlertOctagon, Sparkles, CalendarDays, Trophy } from 'lucide-react';
+import { BarChart3, AlertTriangle, CheckCircle, GraduationCap, Flag, Milestone, AlertOctagon, Sparkles, CalendarDays, Trophy, Play, Smartphone, CalendarClock } from 'lucide-react';
 import { WeeklyReport } from './WeeklyReport';
 import { formatDateBySystem, formatDateTimeBySystem, getYearInfoBySystem } from '../services/dateDisplay';
 
@@ -76,6 +76,28 @@ export const StatsView: React.FC = React.memo(() => {
   // ... existing calculation ...
   const deepWorkTotal = last7Days.reduce((acc, curr) => acc + curr.deepWorkMinutes, 0);
   const totalViolations = last7Days.reduce((acc, curr) => acc + curr.phoneViolations, 0);
+  const weeklyGoalProgress = useMemo(() => {
+    const deepWorkHours = Number((deepWorkTotal / 60).toFixed(1));
+    const zeroViolationDays = last7Days.filter(d => d.phoneViolations === 0).length;
+    const ritualsDefined = (settings.rituals || []).length > 0;
+    const ritualCompletionDays = last7Days.filter(d => {
+      if (!ritualsDefined) return false;
+      const completed = new Set(d.completedRituals || []);
+      return (settings.rituals || []).every(r => completed.has(r));
+    }).length;
+
+    const target = settings.weeklyTargets;
+    const toPct = (value: number, max: number) => max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
+
+    return {
+      deepWorkHours,
+      zeroViolationDays,
+      ritualCompletionDays,
+      deepWorkPct: toPct(deepWorkHours, target.deepWorkHours),
+      zeroViolationPct: toPct(zeroViolationDays, target.zeroViolationDays),
+      ritualPct: toPct(ritualCompletionDays, target.ritualCompletionDays),
+    };
+  }, [deepWorkTotal, last7Days, settings.rituals, settings.weeklyTargets]);
 
   // Filter deadlines for future only
   const upcomingDeadlines = (settings.deadlines || [])
@@ -113,6 +135,41 @@ export const StatsView: React.FC = React.memo(() => {
       type: 'neutral'
     };
   }, [history, subjectStats.coverage]);
+
+  const recommendationActions = useMemo(() => {
+    const startFocus = () => {
+      window.dispatchEvent(new CustomEvent('navigate-focus', {
+        detail: { task: '60-Minute Deep Focus Sprint', durationMinutes: 60 }
+      }));
+    };
+    const phoneProtocol = () => {
+      window.dispatchEvent(new CustomEvent('navigate-focus', {
+        detail: { task: 'Phone Away Protocol Session', durationMinutes: 60 }
+      }));
+    };
+    const openTimetable = () => {
+      window.dispatchEvent(new CustomEvent('navigate-view', { detail: { view: 'TIMETABLE' } }));
+    };
+
+    if (aiInsight.type === 'warning') {
+      return [
+        { id: 'phone', label: 'Set Phone Away Protocol', onClick: phoneProtocol, icon: Smartphone },
+        { id: 'focus', label: 'Start 60m Focus Now', onClick: startFocus, icon: Play },
+      ];
+    }
+
+    if (aiInsight.type === 'info') {
+      return [
+        { id: 'focus', label: 'Start 60m Focus Now', onClick: startFocus, icon: Play },
+        { id: 'plan', label: 'Open Timetable', onClick: openTimetable, icon: CalendarClock },
+      ];
+    }
+
+    return [
+      { id: 'focus', label: 'Start 60m Focus Now', onClick: startFocus, icon: Play },
+      { id: 'phone', label: 'Set Phone Away Protocol', onClick: phoneProtocol, icon: Smartphone },
+    ];
+  }, [aiInsight.type]);
 
   const heatmapData = useMemo(() => {
     const intensityOpacity = (mins: number) => {
@@ -236,6 +293,18 @@ export const StatsView: React.FC = React.memo(() => {
     const today = getHistory(1)[0];
     return (today?.unlockedAchievements || []).map(id => ({ id, label: achievementMeta[id] || id }));
   }, []);
+  const scoreSessionQuality = (session: NonNullable<DayLog['focusSessions']>[number]) => {
+    const sessionDate = session.startAt.split('T')[0];
+    const day = yearHistory.find(d => d.date === sessionDate);
+    const durationScore = Math.min(60, Math.round((session.durationMinutes / 60) * 60));
+    const violationPenalty = Math.min(30, (session.phoneViolationsDuringSession || 0) * 10);
+    const focusBlocks = (day?.schedule || []).filter(b => b.mode === 'Deep Work' || b.mode === 'Study');
+    const completionRatio = focusBlocks.length > 0
+      ? (focusBlocks.filter(b => b.isCompleted).length / focusBlocks.length)
+      : (session.durationMinutes >= 30 ? 1 : 0.5);
+    const completionScore = Math.round(completionRatio * 40);
+    return Math.max(0, Math.min(100, durationScore + completionScore - violationPenalty));
+  };
   const sessionInsights = useMemo(() => {
     const sessions = yearHistory
       .flatMap(d => d.focusSessions || [])
@@ -250,9 +319,14 @@ export const StatsView: React.FC = React.memo(() => {
     });
 
     const bestHour = Object.entries(hourBuckets).sort(([, a], [, b]) => (b.totalMins / b.count) - (a.totalMins / a.count))[0];
+    const qualityScores = sessions.map(s => scoreSessionQuality(s));
+    const avgQuality = qualityScores.length > 0
+      ? Math.round(qualityScores.reduce((sum, val) => sum + val, 0) / qualityScores.length)
+      : 0;
     return {
       sessions,
       bestHour: bestHour ? Number(bestHour[0]) : null,
+      avgQuality,
     };
   }, [yearHistory]);
 
@@ -310,6 +384,53 @@ export const StatsView: React.FC = React.memo(() => {
           <p className="text-2xl font-mono font-bold text-zinc-900 dark:text-white">{totalViolations}</p>
           <p className="text-[10px] text-zinc-500 mt-1">Violations (7d)</p>
         </div>
+
+        <div className="col-span-2 bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 p-4 rounded-2xl">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+              <CheckCircle size={16} />
+              <span className="text-xs font-bold uppercase tracking-wider">Focus Quality Score</span>
+            </div>
+            <span className="text-2xl font-mono font-bold text-zinc-900 dark:text-white">{sessionInsights.avgQuality}<span className="text-xs text-zinc-500 ml-1">/100</span></span>
+          </div>
+          <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+            <div className="h-full bg-indigo-500 transition-all" style={{ width: `${sessionInsights.avgQuality}%` }}></div>
+          </div>
+          <p className="text-[10px] text-zinc-500 mt-2">Scored from session duration, violations, and daily focus completion.</p>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
+        <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 mb-4 uppercase tracking-wider">Weekly Goal Tracking</h3>
+        <div className="space-y-4">
+          <div>
+            <div className="flex items-center justify-between text-xs mb-1">
+              <span className="font-semibold text-zinc-700 dark:text-zinc-300">Deep Work Hours</span>
+              <span className="font-mono text-zinc-600 dark:text-zinc-400">{weeklyGoalProgress.deepWorkHours} / {settings.weeklyTargets.deepWorkHours}h</span>
+            </div>
+            <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+              <div className="h-full bg-primary-500 transition-all" style={{ width: `${weeklyGoalProgress.deepWorkPct}%` }}></div>
+            </div>
+          </div>
+          <div>
+            <div className="flex items-center justify-between text-xs mb-1">
+              <span className="font-semibold text-zinc-700 dark:text-zinc-300">Zero-Violation Days</span>
+              <span className="font-mono text-zinc-600 dark:text-zinc-400">{weeklyGoalProgress.zeroViolationDays} / {settings.weeklyTargets.zeroViolationDays}d</span>
+            </div>
+            <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+              <div className="h-full bg-emerald-500 transition-all" style={{ width: `${weeklyGoalProgress.zeroViolationPct}%` }}></div>
+            </div>
+          </div>
+          <div>
+            <div className="flex items-center justify-between text-xs mb-1">
+              <span className="font-semibold text-zinc-700 dark:text-zinc-300">Ritual Completion Days</span>
+              <span className="font-mono text-zinc-600 dark:text-zinc-400">{weeklyGoalProgress.ritualCompletionDays} / {settings.weeklyTargets.ritualCompletionDays}d</span>
+            </div>
+            <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+              <div className="h-full bg-amber-500 transition-all" style={{ width: `${weeklyGoalProgress.ritualPct}%` }}></div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* AI Coach Insight */}
@@ -328,6 +449,21 @@ export const StatsView: React.FC = React.memo(() => {
         <p className="text-sm font-medium leading-relaxed italic opacity-90">
           "{aiInsight.message}"
         </p>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          {recommendationActions.map(action => {
+            const Icon = action.icon;
+            return (
+              <button
+                key={action.id}
+                onClick={action.onClick}
+                className="py-2.5 px-3 rounded-xl border border-current/25 bg-white/40 dark:bg-black/20 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 hover:bg-white/60 dark:hover:bg-black/35 transition-colors"
+              >
+                <Icon size={13} />
+                {action.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Upcoming Deadlines Widget */}
@@ -537,7 +673,7 @@ export const StatsView: React.FC = React.memo(() => {
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-mono text-zinc-900 dark:text-white">{s.durationMinutes}m</p>
-                  <p className="text-[10px] text-zinc-500">violations: {s.phoneViolationsDuringSession}</p>
+                  <p className="text-[10px] text-zinc-500">quality: {scoreSessionQuality(s)} | violations: {s.phoneViolationsDuringSession}</p>
                 </div>
               </div>
             ))}

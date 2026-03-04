@@ -1,5 +1,5 @@
 
-import { DayLog, ScheduleBlock, Subject, AppSettings, WeeklyPlan } from '../types';
+import { DayLog, ScheduleBlock, Subject, AppSettings, WeeklyPlan, Deadline } from '../types';
 import { DEFAULT_SCHEDULE, ALL_SUBJECTS } from '../constants';
 import { addMinutes, getCurrentTime24, getMinutesDiff } from './timeService';
 
@@ -36,6 +36,14 @@ const invalidateLogCache = () => {
   }
 };
 
+const inferDefaultFixed = (block: Pick<ScheduleBlock, 'blockType' | 'mode' | 'activityName'>): boolean => {
+  if (block.blockType === 'EVENT' || block.mode === 'Class' || block.mode === 'Rest') {
+    return true;
+  }
+  const name = (block.activityName || '').toLowerCase();
+  return /breakfast|lunch|dinner|meal|rest|sleep|nap|break/.test(name);
+};
+
 const normalizeScheduleBlock = (block: ScheduleBlock): ScheduleBlock => {
   const normalizedDays = block.daysOfWeek && block.daysOfWeek.length > 0
     ? Array.from(new Set(block.daysOfWeek)).sort((a, b) => a - b)
@@ -53,6 +61,7 @@ const normalizeScheduleBlock = (block: ScheduleBlock): ScheduleBlock => {
   return {
     ...block,
     blockType: block.blockType || (block.mode === 'Class' ? 'EVENT' : 'TASK'),
+    isFixed: typeof block.isFixed === 'boolean' ? block.isFixed : inferDefaultFixed(block),
     daysOfWeek: normalizedDays,
     eventDate: normalizedDate,
     eventEndDate: normalizedEndDate,
@@ -153,6 +162,12 @@ const DEFAULT_WEEKLY_PLAN: WeeklyPlan = {
   6: { main1: null, main2: null, light: null }, // Sat
 };
 
+const DEFAULT_WEEKLY_TARGETS: AppSettings['weeklyTargets'] = {
+  deepWorkHours: 10,
+  zeroViolationDays: 5,
+  ritualCompletionDays: 5,
+};
+
 const DEFAULT_SETTINGS: AppSettings = {
   userName: 'Student',
   themeAccent: 'indigo',
@@ -162,6 +177,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultFocusMinutes: 60,
   appMode: 'Normal',
   weeklyPlan: DEFAULT_WEEKLY_PLAN,
+  weeklyTargets: DEFAULT_WEEKLY_TARGETS,
+  cloudSyncEnabled: false,
+  cloudSyncPushUrl: '',
+  cloudSyncPullUrl: '',
+  cloudSyncToken: '',
   deadlines: [],
   rituals: ['Exercise', 'Reading', 'Meditation'],
   onboarded: false,
@@ -170,7 +190,13 @@ const DEFAULT_SETTINGS: AppSettings = {
 export const getAppSettings = (): AppSettings => {
   const stored = localStorage.getItem(SETTINGS_KEY);
   const parsed = stored ? JSON.parse(stored) : DEFAULT_SETTINGS;
-  return { ...DEFAULT_SETTINGS, ...parsed, onboarded: parsed.onboarded ?? false, weeklyPlan: { ...DEFAULT_WEEKLY_PLAN, ...parsed.weeklyPlan } };
+  return {
+    ...DEFAULT_SETTINGS,
+    ...parsed,
+    onboarded: parsed.onboarded ?? false,
+    weeklyPlan: { ...DEFAULT_WEEKLY_PLAN, ...parsed.weeklyPlan },
+    weeklyTargets: { ...DEFAULT_WEEKLY_TARGETS, ...(parsed.weeklyTargets || {}) },
+  };
 };
 
 export const saveAppSettings = (settings: AppSettings) => {
@@ -200,15 +226,30 @@ export const saveCustomSubjects = (subjects: Subject[]) => {
 
 // --- DATA MANAGEMENT (Import/Export/Reset) ---
 
-export const exportData = () => {
+export const getBackupPayload = () => {
   flushPendingLogSave();
-  const data = {
+  return {
     logs: getStoredLog(),
     template: getScheduleTemplate(),
     subjects: getCustomSubjects(),
     settings: getAppSettings(),
-    version: 'v5'
+    version: 'v6'
   };
+};
+
+const applyBackupPayload = (data: any) => {
+  invalidateLogCache();
+  if (data.logs) {
+    logCache = data.logs;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data.logs));
+  }
+  if (data.template) localStorage.setItem(TEMPLATE_KEY, JSON.stringify(data.template));
+  if (data.subjects) localStorage.setItem(SUBJECTS_KEY, JSON.stringify(data.subjects));
+  if (data.settings) localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
+};
+
+export const exportData = () => {
+  const data = getBackupPayload();
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -221,18 +262,220 @@ export const exportData = () => {
 export const importData = (jsonString: string) => {
   try {
     const data = JSON.parse(jsonString);
-    invalidateLogCache();
-    if (data.logs) {
-      logCache = data.logs;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data.logs));
-    }
-    if (data.template) localStorage.setItem(TEMPLATE_KEY, JSON.stringify(data.template));
-    if (data.subjects) localStorage.setItem(SUBJECTS_KEY, JSON.stringify(data.subjects));
-    if (data.settings) localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
+    applyBackupPayload(data);
     window.location.reload();
   } catch (e) {
     alert("Invalid backup file.");
   }
+};
+
+export const pushBackupToCloud = async (pushUrl: string, token?: string) => {
+  if (!pushUrl) throw new Error('Cloud push URL is required.');
+  const payload = getBackupPayload();
+  const res = await fetch(pushUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      app: 'yomate',
+      timestamp: new Date().toISOString(),
+      backup: payload,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Cloud push failed (${res.status})`);
+  }
+  return true;
+};
+
+export const pullBackupFromCloud = async (pullUrl: string, token?: string) => {
+  if (!pullUrl) throw new Error('Cloud pull URL is required.');
+  const res = await fetch(pullUrl, {
+    method: 'GET',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Cloud pull failed (${res.status})`);
+  }
+  const data = await res.json();
+  const backup = data?.backup || data;
+  if (!backup || typeof backup !== 'object') {
+    throw new Error('Invalid cloud payload');
+  }
+  applyBackupPayload(backup);
+  window.location.reload();
+};
+
+const ICS_DAY_MAP: Record<string, number> = {
+  SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6,
+};
+
+const unfoldIcsLines = (icsText: string) => {
+  const raw = icsText.replace(/\r/g, '').split('\n');
+  const out: string[] = [];
+  for (const line of raw) {
+    if (!line) continue;
+    if ((line.startsWith(' ') || line.startsWith('\t')) && out.length > 0) {
+      out[out.length - 1] += line.trimStart();
+    } else {
+      out.push(line);
+    }
+  }
+  return out;
+};
+
+const parseIcsField = (line: string) => {
+  const sep = line.indexOf(':');
+  if (sep === -1) return null;
+  const left = line.slice(0, sep);
+  const value = line.slice(sep + 1).trim();
+  const [nameRaw, ...paramParts] = left.split(';');
+  const params: Record<string, string> = {};
+  paramParts.forEach(p => {
+    const [k, v] = p.split('=');
+    if (k && v) params[k.toUpperCase()] = v;
+  });
+  return { name: nameRaw.toUpperCase(), params, value };
+};
+
+const parseIcsDateTime = (raw: string, isDateOnly = false) => {
+  if (!raw) return null;
+  if (isDateOnly || /^\d{8}$/.test(raw)) {
+    const y = Number(raw.slice(0, 4));
+    const m = Number(raw.slice(4, 6));
+    const d = Number(raw.slice(6, 8));
+    const date = `${y.toString().padStart(4, '0')}-${m.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`;
+    return { date, time: null };
+  }
+  const zulu = raw.endsWith('Z');
+  const core = zulu ? raw.slice(0, -1) : raw;
+  const [datePart, timePartRaw] = core.split('T');
+  if (!datePart || !timePartRaw) return null;
+  const y = Number(datePart.slice(0, 4));
+  const m = Number(datePart.slice(4, 6));
+  const d = Number(datePart.slice(6, 8));
+  const hh = Number(timePartRaw.slice(0, 2));
+  const mm = Number(timePartRaw.slice(2, 4));
+
+  if (zulu) {
+    const utc = new Date(Date.UTC(y, m - 1, d, hh, mm, 0));
+    return {
+      date: utc.toISOString().slice(0, 10),
+      time: `${utc.getHours().toString().padStart(2, '0')}:${utc.getMinutes().toString().padStart(2, '0')}`,
+    };
+  }
+  return {
+    date: `${y.toString().padStart(4, '0')}-${m.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`,
+    time: `${hh.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}`,
+  };
+};
+
+export const importIcsCalendar = (icsText: string) => {
+  const lines = unfoldIcsLines(icsText);
+  const events: Array<Record<string, { value: string; params: Record<string, string> }>> = [];
+  let current: Record<string, { value: string; params: Record<string, string> }> | null = null;
+
+  lines.forEach(line => {
+    if (line === 'BEGIN:VEVENT') {
+      current = {};
+      return;
+    }
+    if (line === 'END:VEVENT') {
+      if (current) events.push(current);
+      current = null;
+      return;
+    }
+    if (!current) return;
+    const parsed = parseIcsField(line);
+    if (!parsed) return;
+    current[parsed.name] = { value: parsed.value, params: parsed.params };
+  });
+
+  const existingTemplate = getScheduleTemplate();
+  const existingSettings = getAppSettings();
+  const existingDeadlines = [...(existingSettings.deadlines || [])];
+  const existingDeadlineKey = new Set(existingDeadlines.map(d => `${d.title.toLowerCase()}|${d.date}`));
+  const existingEventKey = new Set(existingTemplate.map(b => `${b.activityName.toLowerCase()}|${b.startTime}|${b.endTime}|${b.eventDate || ''}|${(b.daysOfWeek || []).join(',')}`));
+
+  const addedEvents: ScheduleBlock[] = [];
+  const addedDeadlines: Deadline[] = [];
+
+  events.forEach((evt, idx) => {
+    const summary = (evt.SUMMARY?.value || 'Imported Event').trim();
+    const dtStartRaw = evt.DTSTART?.value;
+    const dtEndRaw = evt.DTEND?.value;
+    if (!dtStartRaw) return;
+    const dtStart = parseIcsDateTime(dtStartRaw, evt.DTSTART?.params?.VALUE === 'DATE');
+    const dtEnd = dtEndRaw ? parseIcsDateTime(dtEndRaw, evt.DTEND?.params?.VALUE === 'DATE') : null;
+    if (!dtStart) return;
+
+    const lower = summary.toLowerCase();
+    const looksLikeDeadline = /exam|midterm|final|quiz|assignment|project|deadline|submission/.test(lower);
+    if (looksLikeDeadline && dtStart.date) {
+      const type: Deadline['type'] =
+        /exam|midterm|final|quiz/.test(lower) ? 'Exam'
+          : /assignment|submission/.test(lower) ? 'Assignment'
+            : /project/.test(lower) ? 'Project'
+              : 'Other';
+      const key = `${summary.toLowerCase()}|${dtStart.date}`;
+      if (!existingDeadlineKey.has(key)) {
+        existingDeadlineKey.add(key);
+        addedDeadlines.push({
+          id: `ics_deadline_${Date.now()}_${idx}`,
+          title: summary,
+          date: dtStart.date,
+          type,
+        });
+      }
+    }
+
+    if (!dtStart.time) return;
+    const endTime = dtEnd?.time || addMinutes(dtStart.time, 60);
+    const rrule = evt.RRULE?.value || '';
+    const byDay = /BYDAY=([^;]+)/.exec(rrule)?.[1];
+    const daysOfWeek = byDay
+      ? byDay.split(',').map(code => ICS_DAY_MAP[code.trim().toUpperCase()]).filter((v): v is number => typeof v === 'number')
+      : undefined;
+    const untilRaw = /UNTIL=([^;]+)/.exec(rrule)?.[1];
+    const until = untilRaw ? parseIcsDateTime(untilRaw)?.date : undefined;
+
+    const newBlock: ScheduleBlock = normalizeScheduleBlock({
+      id: `ics_event_${Date.now()}_${idx}`,
+      startTime: dtStart.time,
+      endTime,
+      activityName: summary,
+      mode: 'Class',
+      blockType: 'EVENT',
+      daysOfWeek: daysOfWeek && daysOfWeek.length > 0 ? daysOfWeek : undefined,
+      eventDate: daysOfWeek && daysOfWeek.length > 0 ? dtStart.date : dtStart.date,
+      eventEndDate: until,
+      isCompleted: false,
+    });
+    const key = `${newBlock.activityName.toLowerCase()}|${newBlock.startTime}|${newBlock.endTime}|${newBlock.eventDate || ''}|${(newBlock.daysOfWeek || []).join(',')}`;
+    if (!existingEventKey.has(key)) {
+      existingEventKey.add(key);
+      addedEvents.push(newBlock);
+    }
+  });
+
+  if (addedEvents.length > 0) {
+    const merged = [...existingTemplate, ...addedEvents].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    saveScheduleTemplate(merged);
+  }
+  if (addedDeadlines.length > 0) {
+    const mergedDeadlines = [...existingDeadlines, ...addedDeadlines].sort((a, b) => a.date.localeCompare(b.date));
+    saveAppSettings({ ...existingSettings, deadlines: mergedDeadlines });
+  }
+
+  return {
+    importedEvents: addedEvents.length,
+    importedDeadlines: addedDeadlines.length,
+    totalEventsParsed: events.length,
+  };
 };
 
 export const resetApp = () => {
@@ -302,6 +545,18 @@ export const getYesterdayLog = (): DayLog | null => {
   return logs[dateStr] || null;
 };
 
+const toPrimaryObjectiveFromFix = (fixText?: string | null): string | undefined => {
+  if (!fixText) return undefined;
+  const cleaned = fixText
+    .replace(/^[-*•\s]+/, '')
+    .replace(/^(one\s+fix\s+(for\s+tomorrow)?\s*[:\-]\s*)/i, '')
+    .trim();
+  if (!cleaned) return undefined;
+  const firstChunk = cleaned.split(/\r?\n|[.!?]/)[0].trim();
+  if (!firstChunk) return undefined;
+  return firstChunk.slice(0, 120);
+};
+
 export const saveLog = (date: string, data: DayLog) => {
   const allLogs = getStoredLog();
   const settings = getAppSettings();
@@ -351,6 +606,13 @@ export const initializeToday = (dryRun = false): DayLog => {
       logs[date].additionalSubjects = [];
       saveLog(date, logs[date]);
     }
+    if (!logs[date].primaryObjective) {
+      const inferredObjective = toPrimaryObjectiveFromFix(getYesterdayLog()?.reflection?.fixForTomorrow);
+      if (inferredObjective) {
+        logs[date].primaryObjective = inferredObjective;
+        saveLog(date, logs[date]);
+      }
+    }
     return logs[date];
   }
 
@@ -395,6 +657,7 @@ export const initializeToday = (dryRun = false): DayLog => {
     completedRituals: [], // Init Rituals
     subjectMinutes: {},
     timeEarned: 0, // Init Earned Time
+    primaryObjective: toPrimaryObjectiveFromFix(yesterdayLog?.reflection?.fixForTomorrow),
     reflection: {
       whatWentRight: '',
       distractionWin: '',
@@ -403,12 +666,6 @@ export const initializeToday = (dryRun = false): DayLog => {
     focusSessions: [],
     unlockedAchievements: [],
   };
-
-  // Look for primary objective set yesterday
-  const yesterday = getYesterdayLog();
-  if (yesterday && yesterday.reflection.fixForTomorrow) {
-    // We already use fixForTomorrow as a hint in Timetable, but we can also use tomorrowObjective if we add it
-  }
 
   if (!dryRun) {
     saveLog(date, newLog);
@@ -507,13 +764,23 @@ export const shiftScheduleForward = (blockId: string) => {
   // Tracking: Add to timeEarned
   today.timeEarned = (today.timeEarned || 0) + timeSaved;
 
-  // Shift all subsequent blocks
+  // Shift only flexible blocks; keep fixed events/classes at their original times.
+  // Once a fixed block is reached, we stop carrying the shift forward.
+  const isFixedBlock = (block: ScheduleBlock) =>
+    typeof block.isFixed === 'boolean' ? block.isFixed : inferDefaultFixed(block);
+
+  let remainingShift = timeSaved;
   for (let i = blockIndex + 1; i < today.schedule.length; i++) {
     const b = today.schedule[i];
+    if (remainingShift <= 0) break;
+    if (isFixedBlock(b)) {
+      remainingShift = 0;
+      continue;
+    }
     today.schedule[i] = {
       ...b,
-      startTime: addMinutes(b.startTime, -timeSaved),
-      endTime: addMinutes(b.endTime, -timeSaved)
+      startTime: addMinutes(b.startTime, -remainingShift),
+      endTime: addMinutes(b.endTime, -remainingShift)
     };
   }
 
@@ -589,4 +856,44 @@ export const updateScheduleBlock = (blockId: string, updates: Partial<ScheduleBl
 
   saveLog(date, today);
   return today;
+};
+
+export const pullBlockToNow = (blockId: string, fromTime?: string): { success: boolean; message: string } => {
+  const date = getTodayDateString();
+  const logs = getStoredLog();
+  const today = logs[date] || initializeToday();
+  const blockIndex = today.schedule.findIndex(b => b.id === blockId);
+  if (blockIndex === -1) {
+    return { success: false, message: 'Next block not found.' };
+  }
+
+  const now = fromTime || getCurrentTime24();
+  const target = today.schedule[blockIndex];
+  if (now >= target.startTime) {
+    return { success: false, message: 'This block has already started.' };
+  }
+
+  const isFixedBlock = (block: ScheduleBlock) =>
+    typeof block.isFixed === 'boolean' ? block.isFixed : inferDefaultFixed(block);
+  if (isFixedBlock(target)) {
+    return { success: false, message: 'Fixed block cannot be started early.' };
+  }
+
+  const pullBy = getMinutesDiff(now, target.startTime);
+  if (pullBy <= 0) {
+    return { success: false, message: 'No free time to pull from.' };
+  }
+
+  for (let i = blockIndex; i < today.schedule.length; i++) {
+    const b = today.schedule[i];
+    if (isFixedBlock(b)) break;
+    today.schedule[i] = {
+      ...b,
+      startTime: addMinutes(b.startTime, -pullBy),
+      endTime: addMinutes(b.endTime, -pullBy),
+    };
+  }
+
+  saveLog(date, today);
+  return { success: true, message: `Started "${target.activityName}" now.` };
 };

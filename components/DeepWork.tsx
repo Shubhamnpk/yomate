@@ -13,6 +13,7 @@ interface Props {
   refreshLog: () => void;
   initialTask?: string;
   scheduledEnd?: string | null;
+  initialDurationMinutes?: number | null;
 }
 
 type FocusMode = 'DEEP' | 'POMODORO';
@@ -38,7 +39,7 @@ const SUCCESS_TITLES = [
   "Peak Protocol Meta"
 ];
 
-export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialTask = '', scheduledEnd = null }) => {
+export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialTask = '', scheduledEnd = null, initialDurationMinutes = null }) => {
   const [timerState, setTimerState] = useState<TimerState>('IDLE');
   const [focusMode, setFocusMode] = useState<FocusMode>('DEEP');
 
@@ -97,6 +98,10 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
         setSessionTask(initialTask);
       }
 
+      if (typeof initialDurationMinutes === 'number' && initialDurationMinutes > 0) {
+        setSelectedDuration(initialDurationMinutes);
+      }
+
       if (scheduledEnd) {
         const now = getCurrentTime24();
         const diff = getMinutesDiff(now, scheduledEnd);
@@ -105,7 +110,7 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
         }
       }
     }
-  }, [initialTask, scheduledEnd, timerState]);
+  }, [initialTask, scheduledEnd, timerState, initialDurationMinutes]);
 
   useEffect(() => { logRef.current = log; }, [log]);
   useEffect(() => { focusModeRef.current = focusMode; }, [focusMode]);

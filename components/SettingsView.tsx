@@ -5,7 +5,7 @@ import {
   getScheduleTemplate, saveScheduleTemplate,
   getCustomSubjects,
   getAppSettings, saveAppSettings,
-  initializeToday, saveLog, getHistory
+  initializeToday, saveLog, getHistory, getTodayDateString, getStoredLog, isBlockScheduledForDay
 } from '../services/storageService';
 import { EditBlockModal } from './EditBlockModal';
 import {
@@ -25,9 +25,10 @@ import { AboutTab } from './settings/AboutTab';
 interface Props {
   onClose: () => void;
   refreshApp: () => void;
+  refreshLog: () => void;
 }
 
-export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
+export const SettingsView: React.FC<Props> = ({ onClose, refreshApp, refreshLog }) => {
   const [activeTab, setActiveTab] = useState<'APPEARANCE' | 'STRATEGY' | 'SCHEDULE' | 'SUBJECTS' | 'DATA' | 'ABOUT'>('APPEARANCE');
 
   // Data States
@@ -100,6 +101,42 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
     newTemplate.sort((a, b) => a.startTime.localeCompare(b.startTime));
     setTemplate(newTemplate);
     saveScheduleTemplate(newTemplate);
+
+    // Keep today's live timeline in sync with template edits.
+    const todayStr = getTodayDateString();
+    const logs = getStoredLog();
+    const todayLog = logs[todayStr] || initializeToday();
+    const [y, m, d] = todayStr.split('-').map(Number);
+    const dayOfWeek = new Date(y, m - 1, d).getDay();
+
+    const updatedTemplateBlock = newTemplate.find(b => b.id === id);
+    const shouldBeInToday = !!(updatedTemplateBlock && isBlockScheduledForDay(updatedTemplateBlock, dayOfWeek, todayStr));
+    const existsInToday = todayLog.schedule.some(block => block.id === id);
+
+    let changed = false;
+    let nextSchedule = [...todayLog.schedule];
+
+    if (existsInToday && shouldBeInToday) {
+      nextSchedule = nextSchedule.map((block) => {
+        if (block.id !== id) return block;
+        changed = true;
+        return { ...block, ...updates };
+      });
+    } else if (existsInToday && !shouldBeInToday) {
+      nextSchedule = nextSchedule.filter(block => block.id !== id);
+      changed = true;
+    } else if (!existsInToday && shouldBeInToday && updatedTemplateBlock) {
+      nextSchedule = [...nextSchedule, { ...updatedTemplateBlock, isCompleted: false }];
+      changed = true;
+    }
+
+    if (changed) {
+      nextSchedule.sort((a, b) => a.startTime.localeCompare(b.startTime));
+      const newLog = { ...todayLog, schedule: nextSchedule };
+      saveLog(todayStr, newLog);
+      setDayLog(newLog);
+      refreshLog();
+    }
   };
 
   const handleStrategySelect = (slot: 'main1' | 'main2' | 'light', subjectId: string) => {
@@ -167,7 +204,7 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
         )}
         {activeTab === 'SUBJECTS' && <SubjectsTab subjects={subjects} setSubjects={setSubjects} />}
         {activeTab === 'SCHEDULE' && <ScheduleTab template={template} setEditingBlockId={setEditingBlockId} />}
-        {activeTab === 'DATA' && <DataTab />}
+        {activeTab === 'DATA' && <DataTab settings={settings} handleSaveSettings={handleSaveSettings} />}
         {activeTab === 'ABOUT' && <AboutTab />}
       </div>
     </div>

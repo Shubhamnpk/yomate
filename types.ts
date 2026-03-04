@@ -1,5 +1,5 @@
 
-export type ActivityMode = 'Study' | 'Deep Work' | 'Human' | 'Rest' | 'Class';
+export type ActivityMode = 'Study' | 'Deep Work' | 'Human' | 'Rest' | 'Class' | 'Task';
 
 export interface ScheduleBlock {
   id: string;
@@ -8,6 +8,7 @@ export interface ScheduleBlock {
   activityName: string;
   mode: ActivityMode;
   blockType?: 'TASK' | 'EVENT'; // EVENT = fixed event/class style block
+  isFixed?: boolean; // User-configurable: fixed blocks are not auto-shifted
   daysOfWeek?: number[]; // 0=Sun ... 6=Sat. Omitted means every day.
   eventDate?: string; // Optional start date (YYYY-MM-DD) for EVENT blocks
   eventEndDate?: string; // Optional end date (YYYY-MM-DD) for EVENT blocks
@@ -18,7 +19,7 @@ export interface ScheduleBlock {
 export interface Subject {
   id: string;
   name: string;
-  category: 'Pharmacy' | 'Coding' | 'Other';
+  category: 'Pharmacy' | 'Coding' | 'Other' | 'NEB';
   priority?: 'High' | 'Normal'; // New field for rotation logic
 }
 
@@ -90,6 +91,12 @@ export interface WeeklyPlan {
   };
 }
 
+export interface WeeklyTargets {
+  deepWorkHours: number;
+  zeroViolationDays: number;
+  ritualCompletionDays: number;
+}
+
 export interface AppSettings {
   userName: string; // Personalization
   themeAccent: 'indigo' | 'emerald' | 'rose' | 'violet' | 'orange';
@@ -99,6 +106,11 @@ export interface AppSettings {
   defaultFocusMinutes: number; // Workflow preference
   appMode: AppMode;
   weeklyPlan: WeeklyPlan; // Weekly Scheduler
+  weeklyTargets: WeeklyTargets;
+  cloudSyncEnabled?: boolean;
+  cloudSyncPushUrl?: string;
+  cloudSyncPullUrl?: string;
+  cloudSyncToken?: string;
   deadlines: Deadline[]; // Horizon Feature
   rituals: string[]; // New: Habits
   onboarded: boolean;

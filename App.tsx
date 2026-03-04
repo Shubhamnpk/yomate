@@ -37,11 +37,6 @@ const GlobalSleepHUD: React.FC<SleepHUDProps> = ({ currentTime }) => {
       const [h, m] = currentTime.split(':').map(Number);
       const minutes = h * 60 + m;
 
-      // Logic:
-      // Target: 00:30 (24.5h)
-      // Warning: 22:30 (22.5h) to 00:30
-      // Danger: 00:31 to 05:00
-
       const targetMins = 24.5 * 60; // 1470 mins
       const currentMinsAdjusted = h < 5 ? (h + 24) * 60 + m : minutes;
 
@@ -300,6 +295,7 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(getAppSettings());
   const [initialFocusTask, setInitialFocusTask] = useState<string>('');
   const [scheduledEnd, setScheduledEnd] = useState<string | null>(null);
+  const [initialFocusDuration, setInitialFocusDuration] = useState<number | null>(null);
 
   // Swipe Navigation State
   const touchStart = useRef<number | null>(null);
@@ -391,11 +387,11 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    // Clock Tick — every 60s is sufficient for schedule block tracking.
+    // Clock Tick — refresh every 5s for tighter timeline updates.
     // 1s intervals caused a full React tree re-render every second, killing mobile perf.
     const interval = setInterval(() => {
       setRealTime(getCurrentTime24());
-    }, 60000);
+    }, 5000);
 
     // Global keyboard shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -608,14 +604,26 @@ const App: React.FC = () => {
     const handleFocusNav = (e: any) => {
       const task = e.detail?.task;
       const end = e.detail?.scheduledEnd;
+      const durationMinutes = e.detail?.durationMinutes;
       if (task) {
         setInitialFocusTask(task);
         setScheduledEnd(end || null);
+        setInitialFocusDuration(typeof durationMinutes === 'number' && durationMinutes > 0 ? durationMinutes : null);
         setView('FOCUS');
       }
     };
+    const handleViewNav = (e: any) => {
+      const view = e.detail?.view as ViewState | undefined;
+      if (view && VIEW_ORDER.includes(view)) {
+        setView(view);
+      }
+    };
     window.addEventListener('navigate-focus', handleFocusNav);
-    return () => window.removeEventListener('navigate-focus', handleFocusNav);
+    window.addEventListener('navigate-view', handleViewNav);
+    return () => {
+      window.removeEventListener('navigate-focus', handleFocusNav);
+      window.removeEventListener('navigate-view', handleViewNav);
+    };
   }, []);
 
   if (!dayLog) return <div className="h-[100dvh] bg-zinc-950 flex items-center justify-center text-zinc-500">Loading Protocol...</div>;
@@ -683,6 +691,7 @@ const App: React.FC = () => {
                   refreshLog={refreshLog}
                   initialTask={initialFocusTask}
                   scheduledEnd={scheduledEnd}
+                  initialDurationMinutes={initialFocusDuration}
                 />
               )}
               {currentView === 'STATS' && <StatsView />}

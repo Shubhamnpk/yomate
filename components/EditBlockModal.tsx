@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ScheduleBlock, ActivityMode } from '../types';
 import { X, Save, Clock, Tag, AlertCircle } from 'lucide-react';
 import { haptic } from '../services/hapticService';
@@ -23,11 +23,25 @@ const WEEK_DAYS = [
 ];
 
 export const EditBlockModal: React.FC<Props> = ({ block, onSave, onClose }) => {
+  const inferFixed = (candidate: { blockType: 'TASK' | 'EVENT'; mode: ActivityMode; activityName: string }) => {
+    if (candidate.blockType === 'EVENT' || candidate.mode === 'Class' || candidate.mode === 'Rest') {
+      return true;
+    }
+    const name = (candidate.activityName || '').toLowerCase();
+    return /breakfast|lunch|dinner|meal|rest|sleep|nap|break/.test(name);
+  };
+
   const [startTime, setStartTime] = useState(block.startTime);
   const [endTime, setEndTime] = useState(block.endTime);
   const [activityName, setActivityName] = useState(block.activityName);
   const [mode, setMode] = useState<ActivityMode>(block.mode);
   const [blockType, setBlockType] = useState<'TASK' | 'EVENT'>(block.blockType || (block.mode === 'Class' ? 'EVENT' : 'TASK'));
+  const [isFixed, setIsFixed] = useState<boolean>(
+    typeof block.isFixed === 'boolean'
+      ? block.isFixed
+      : inferFixed({ blockType: block.blockType || (block.mode === 'Class' ? 'EVENT' : 'TASK'), mode: block.mode, activityName: block.activityName })
+  );
+  const [fixedManuallyChanged, setFixedManuallyChanged] = useState(false);
   const [eventDate, setEventDate] = useState(block.eventDate || '');
   const [eventEndDate, setEventEndDate] = useState(block.eventEndDate || '');
   const [durationMinutes, setDurationMinutes] = useState<number>(
@@ -37,6 +51,11 @@ export const EditBlockModal: React.FC<Props> = ({ block, onSave, onClose }) => {
     block.daysOfWeek && block.daysOfWeek.length > 0 ? [...block.daysOfWeek] : [0, 1, 2, 3, 4, 5, 6]
   );
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (fixedManuallyChanged) return;
+    setIsFixed(inferFixed({ blockType, mode, activityName }));
+  }, [blockType, mode, activityName, fixedManuallyChanged]);
 
   const handleSubmit = () => {
     const computedEndTime = blockType === 'EVENT' ? addMinutes(startTime, durationMinutes) : endTime;
@@ -65,6 +84,7 @@ export const EditBlockModal: React.FC<Props> = ({ block, onSave, onClose }) => {
       activityName,
       mode,
       blockType,
+      isFixed,
       eventDate: blockType === 'EVENT' && eventDate ? eventDate : undefined,
       eventEndDate: blockType === 'EVENT' && eventEndDate ? eventEndDate : undefined,
       durationMinutes: blockType === 'EVENT' ? durationMinutes : undefined,
@@ -158,7 +178,7 @@ export const EditBlockModal: React.FC<Props> = ({ block, onSave, onClose }) => {
         <div>
           <label className="text-[10px] font-bold text-zinc-500 uppercase mb-3 block tracking-widest">Category Mode</label>
           <div className="grid grid-cols-3 gap-2">
-            {(['Study', 'Deep Work', 'Class', 'Rest', 'Human'] as ActivityMode[]).map((m) => (
+            {(['Study', 'Deep Work', 'Task', 'Class', 'Rest', 'Human'] as ActivityMode[]).map((m) => (
               <button
                 key={m}
                 onClick={() => { haptic.light(); setMode(m); }}
@@ -189,6 +209,43 @@ export const EditBlockModal: React.FC<Props> = ({ block, onSave, onClose }) => {
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="text-[10px] font-bold text-zinc-500 uppercase mb-3 block tracking-widest">Timeline Behavior</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                haptic.light();
+                setIsFixed(true);
+                setFixedManuallyChanged(true);
+              }}
+              className={`text-xs font-bold py-3 rounded-xl border transition-all active-scale
+                ${isFixed
+                  ? 'bg-primary-600 text-white border-primary-500'
+                  : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-500'}`}
+            >
+              Fixed
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                haptic.light();
+                setIsFixed(false);
+                setFixedManuallyChanged(true);
+              }}
+              className={`text-xs font-bold py-3 rounded-xl border transition-all active-scale
+                ${!isFixed
+                  ? 'bg-primary-600 text-white border-primary-500'
+                  : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-500'}`}
+            >
+              Flexible
+            </button>
+          </div>
+          <p className="text-[10px] text-zinc-500 mt-2">
+            Fixed blocks keep their time when earlier tasks finish early.
+          </p>
         </div>
 
         <div>

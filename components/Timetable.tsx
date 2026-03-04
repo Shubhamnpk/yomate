@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo, startTransition } from 'react';
 import { DayLog, ScheduleBlock, AppMode, DateSystem } from '../types';
-import { updateScheduleStatus, updateScheduleBlock, splitBlockInSchedule, shiftScheduleForward, getAppSettings, getYesterdayLog, saveLog, getStreak, isBlockScheduledForDay } from '../services/storageService';
+import { updateScheduleStatus, updateScheduleBlock, splitBlockInSchedule, shiftScheduleForward, pullBlockToNow, getAppSettings, getYesterdayLog, saveLog, getStreak, isBlockScheduledForDay } from '../services/storageService';
 import { formatTo12h, isTimeInRange, getMinutesDiff } from '../services/timeService';
 import { formatDateBySystem } from '../services/dateDisplay';
 import { SubjectManager } from './SubjectManager';
@@ -8,8 +8,9 @@ import { EditBlockModal } from './EditBlockModal';
 import { BlockActionModal } from './BlockActionModal';
 import { SettingsView } from './SettingsView';
 import { BrainDump } from './BrainDump';
+import { Model } from './ui/model';
 import { getCustomSubjects } from '../services/storageService';
-import { Settings, Pencil, CheckCircle2, Circle, Play, ChevronRight, MessageSquareQuote, X, Moon, Sunrise, Coffee, AlarmClock, StickyNote, Flag, AlertTriangle, Dumbbell, Zap, Flame } from 'lucide-react';
+import { Settings, Pencil, CheckCircle2, Circle, Play, ChevronRight, MessageSquareQuote, X, Moon, Sunrise, Coffee, AlarmClock, StickyNote, Flag, AlertTriangle, Dumbbell, Zap, Flame, FastForward, BookOpen } from 'lucide-react';
 import { haptic } from '../services/hapticService';
 
 interface Props {
@@ -21,6 +22,13 @@ interface Props {
 }
 
 export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refreshApp, currentTime }) => {
+  type FreeGapAction = {
+    gapMinutes: number;
+    startTime: string;
+    endTime: string;
+    nextBlock: ScheduleBlock;
+  };
+
   const [showStrategy, setShowStrategy] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showBrainDump, setShowBrainDump] = useState(false);
@@ -37,6 +45,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
   const [clickedBlock, setClickedBlock] = useState<ScheduleBlock | null>(null);
   const [allSubjects, setAllSubjects] = useState(getCustomSubjects());
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
+  const [freeGapAction, setFreeGapAction] = useState<FreeGapAction | null>(null);
   const dayOfWeek = useMemo(() => {
     const [y, m, d] = log.date.split('-').map(Number);
     return new Date(y, m - 1, d).getDay();
@@ -274,10 +283,33 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
     return visibleSchedule.find(b => b.id === activeBlockId && (b.mode === 'Study' || b.mode === 'Deep Work')) || null;
   }, [activeBlockId, visibleSchedule]);
 
+  const toMinutes = (time: string) => {
+    const [h, m] = time.split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  const timelineSchedule = useMemo(
+    () => [...visibleSchedule].sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    [visibleSchedule]
+  );
+
+  const streakRisk = useMemo(() => {
+    const now = toMinutes(currentTime);
+    const minRequired = Math.max(0, 16 - (log.deepWorkMinutes || 0));
+    const eveningStartsAt = 18 * 60;
+    if (streak <= 0 || now < eveningStartsAt || now >= 24 * 60 || minRequired <= 0) {
+      return null;
+    }
+    return {
+      minsUntilReset: (24 * 60) - now,
+      minRequired,
+    };
+  }, [currentTime, log.deepWorkMinutes, streak]);
+
   return (
     <div className="p-5 pb-32 animate-in fade-in duration-500">
       {showSettings && (
-        <SettingsView onClose={() => setShowSettings(false)} refreshApp={refreshApp} />
+        <SettingsView onClose={() => setShowSettings(false)} refreshApp={refreshApp} refreshLog={refreshLog} />
       )}
 
       {showBrainDump && (
@@ -305,6 +337,83 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
           onShift={handleBlockActionShift}
           onClose={() => setClickedBlock(null)}
         />
+      )}
+
+      {freeGapAction && (
+        <Model
+          onClose={() => setFreeGapAction(null)}
+          zIndexClass="z-[60]"
+          layout="bottom"
+          showMobileHandle
+          contentClassName="bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 sm:rounded-2xl p-6 sm:pb-6 pb-12 animate-slide-up sm:animate-in sm:zoom-in-95"
+        >
+          <h3 className="text-zinc-900 dark:text-white font-bold mb-2 text-xl font-display">Free Time Actions</h3>
+          <p className="text-zinc-600 dark:text-zinc-400 text-sm mb-6 leading-relaxed">
+            Gap: {freeGapAction.gapMinutes}m ({formatTo12h(freeGapAction.startTime)} - {formatTo12h(freeGapAction.endTime)})
+          </p>
+
+          <div className="space-y-3">
+            <button
+              onClick={() => {
+                const action = freeGapAction;
+                setFreeGapAction(null);
+                if (!action) return;
+                deferInteractionWork(() => {
+                  const result = pullBlockToNow(action.nextBlock.id, currentTime);
+                  if (result.success) haptic.success();
+                  else {
+                    haptic.error();
+                    alert(result.message);
+                  }
+                  startTransition(() => refreshLog());
+                });
+              }}
+              className="w-full flex items-center gap-3 p-4 rounded-2xl bg-primary-600 hover:bg-primary-500 active-scale transition-all text-left text-white"
+            >
+              <div className="p-2.5 rounded-xl bg-white/20 text-white"><FastForward size={20} /></div>
+              <div>
+                <span className="block font-bold text-sm">Start Next Task Now</span>
+                <span className="block text-white/70 text-xs">{getRealActivityName(freeGapAction.nextBlock.activityName)}</span>
+              </div>
+            </button>
+
+            <button
+              onClick={() => {
+                haptic.light();
+                setFreeGapAction(null);
+              }}
+              className="w-full flex items-center gap-3 p-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800/50 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700/50 active-scale transition-all text-left"
+            >
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-500"><Coffee size={20} /></div>
+              <div>
+                <span className="block text-zinc-900 dark:text-white font-bold text-sm">Tactical Break</span>
+                <span className="block text-zinc-500 text-xs">Keep this free slot as recovery time</span>
+              </div>
+            </button>
+
+            <button
+              onClick={() => {
+                setFreeGapAction(null);
+                haptic.medium();
+                const action = freeGapAction;
+                if (!action) return;
+                window.dispatchEvent(new CustomEvent('navigate-focus', {
+                  detail: {
+                    task: 'System Review',
+                    durationMinutes: Math.max(10, Math.min(60, action.gapMinutes)),
+                  }
+                }));
+              }}
+              className="w-full flex items-center gap-3 p-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800/50 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700/50 active-scale transition-all text-left"
+            >
+              <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-500"><BookOpen size={20} /></div>
+              <div>
+                <span className="block text-zinc-900 dark:text-white font-bold text-sm">Drill Session</span>
+                <span className="block text-zinc-500 text-xs">Launch a quick focus sprint</span>
+              </div>
+            </button>
+          </div>
+        </Model>
       )}
 
       <header className="flex justify-between items-start mb-6 mt-4 relative">
@@ -398,6 +507,33 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
           <div className="text-right">
             <span className={`block text-2xl font-mono font-bold ${deadlineInfo.days <= 3 ? 'text-rose-600 dark:text-rose-400' : deadlineInfo.days <= 7 ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-900 dark:text-white'}`}>{deadlineInfo.days}</span>
             <span className="text-[10px] uppercase font-bold text-zinc-500">Days Left</span>
+          </div>
+        </div>
+      )}
+
+      {streakRisk && (
+        <div className="mb-4 p-4 rounded-xl border border-orange-500/30 bg-orange-500/10 animate-in slide-in-from-top-2">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-orange-500 text-white">
+              <Flame size={16} />
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-orange-700 dark:text-orange-300">Streak Risk</p>
+              <p className="text-sm font-semibold text-zinc-900 dark:text-white">
+                You'll lose your streak in {streakRisk.minsUntilReset}m unless you do {streakRisk.minRequired}m deep work.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => {
+                    haptic.medium();
+                    window.dispatchEvent(new CustomEvent('navigate-focus', { detail: { task: 'Streak Rescue Session', durationMinutes: 60 } }));
+                  }}
+                  className="px-3 py-2 rounded-lg bg-orange-500 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-orange-600 transition-colors"
+                >
+                  Start 60m Focus
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -528,11 +664,15 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
       </div>
 
       <div className="relative border-l-2 border-zinc-200 dark:border-zinc-900 ml-3 space-y-6">
-        {visibleSchedule.map((block) => {
+        {timelineSchedule.map((block, idx) => {
           const active = block.id === activeBlockId;
           const activityName = getRealActivityName(block.activityName);
           const progress = active ? getBlockProgress(block.startTime, block.endTime) : 0;
           const minsLeft = active ? getTimeRemaining(block.endTime) : 0;
+          const nextBlockInTimeline = timelineSchedule[idx + 1];
+          const gapMinutes = nextBlockInTimeline
+            ? toMinutes(nextBlockInTimeline.startTime) - toMinutes(block.endTime)
+            : 0;
 
           const isFocusable = (block.mode === 'Study' || block.mode === 'Deep Work') && active;
           const isMinimizedCompleted = block.isCompleted && !editMode && !active;
@@ -541,23 +681,23 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
           const isDimmed = !active && isSleep;
 
           return (
-            <div
-              key={block.id}
-              className={`relative pl-8 group ${isDimmed ? 'opacity-50 grayscale hover:opacity-100 hover:grayscale-0 transition-opacity' : ''}`}
-              ref={active ? activeBlockRef : null}
-            >
+            <React.Fragment key={block.id}>
               <div
-                className={`absolute -left-[9px] ${isMinimizedCompleted ? 'top-4' : 'top-6'} w-4 h-4 rounded-full border-4 transition-all duration-500 z-10
+                className={`relative pl-8 group ${isDimmed ? 'opacity-50 grayscale hover:opacity-100 hover:grayscale-0 transition-opacity' : ''}`}
+                ref={active ? activeBlockRef : null}
+              >
+                <div
+                  className={`absolute -left-[9px] ${isMinimizedCompleted ? 'top-4' : 'top-6'} w-4 h-4 rounded-full border-4 transition-all duration-500 z-10
                 ${active
                     ? 'bg-primary-500 border-white dark:border-zinc-950 shadow-[0_0_15px_rgb(var(--primary))] scale-110'
                     : block.isCompleted
                       ? 'bg-zinc-400 dark:bg-zinc-800 border-zinc-50 dark:border-zinc-950'
                       : 'bg-zinc-200 dark:bg-zinc-950 border-zinc-100 dark:border-zinc-800'}`}
-              ></div>
+                ></div>
 
-              <div
-                onClick={() => handleBlockClick(block)}
-                className={`relative rounded-2xl border cursor-pointer transition-all duration-500 ease-out overflow-hidden group/card
+                <div
+                  onClick={() => handleBlockClick(block)}
+                  className={`relative rounded-2xl border cursor-pointer transition-all duration-500 ease-out overflow-hidden group/card
                   ${editMode
                     ? 'border-primary-500/30 bg-primary-500/5 hover:bg-primary-500/10'
                     : active
@@ -574,7 +714,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
                   ></div>
                 )}
 
-                <div className={`relative ${isMinimizedCompleted ? 'p-3' : 'p-5'}`}>
+                  <div className={`relative ${isMinimizedCompleted ? 'p-3' : 'p-5'}`}>
                   {editMode && (
                     <div className="absolute top-3 right-3 text-primary-400 opacity-50 group-hover/card:opacity-100">
                       <Pencil size={14} />
@@ -600,6 +740,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
                           <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-1 rounded-md transition-colors
                             ${block.mode === 'Deep Work' ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400' :
                               block.mode === 'Study' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
+                                block.mode === 'Task' ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400' :
                                 block.mode === 'Human' ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' :
                                   'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'}`}>
                             {block.mode}
@@ -644,9 +785,41 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
                       </button>
                     </div>
                   )}
+
+                  </div>
                 </div>
               </div>
-            </div>
+              {gapMinutes >= 5 && (
+                <div
+                  className="relative pl-8 mt-4 cursor-pointer"
+                  onClick={() => {
+                    haptic.light();
+                    setFreeGapAction({
+                      gapMinutes,
+                      startTime: block.endTime,
+                      endTime: nextBlockInTimeline!.startTime,
+                      nextBlock: nextBlockInTimeline!,
+                    });
+                  }}
+                >
+                  <div className="absolute -left-[9px] top-5 w-4 h-4 rounded-full border-4 bg-sky-100 dark:bg-sky-900/40 border-sky-200 dark:border-sky-800"></div>
+                  <div className="rounded-2xl border border-sky-200 dark:border-sky-900/60 bg-sky-50/70 dark:bg-sky-950/30 p-4 hover:bg-sky-100/80 dark:hover:bg-sky-950/40 transition-colors">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-bold tracking-wider uppercase px-2 py-1 rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-300">
+                        Free
+                      </span>
+                      <span className="font-mono text-xs text-sky-700 dark:text-sky-300">
+                        {formatTo12h(block.endTime)} - {formatTo12h(nextBlockInTimeline!.startTime)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sky-700 dark:text-sky-200">
+                      <Coffee size={14} />
+                      <span className="text-sm font-semibold">Free Time ({gapMinutes}m)</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </React.Fragment>
           );
         })}
       </div>

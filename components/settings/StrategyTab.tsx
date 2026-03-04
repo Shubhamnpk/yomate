@@ -1,9 +1,10 @@
 
-import React, { useState } from 'react';
-import { CheckCircle2, Plus, X, CalendarDays, ChevronLeft, ChevronRight, Sparkles, Star, Clock, Flag, AlertOctagon, Milestone, Trash2 } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { CheckCircle2, Plus, X, CalendarDays, ChevronLeft, ChevronRight, Sparkles, Star, Clock, Flag, AlertOctagon, Milestone, Trash2, Upload } from 'lucide-react';
 import { AppSettings, Subject, DayLog, Deadline } from '../../types';
 import { haptic } from '../../services/hapticService';
 import { formatDateBySystem } from '../../services/dateDisplay';
+import { getAppSettings, getHistory, importIcsCalendar } from '../../services/storageService';
 
 interface Props {
     settings: AppSettings;
@@ -31,6 +32,8 @@ export const StrategyTab: React.FC<Props> = ({
     const [newDeadlineTitle, setNewDeadlineTitle] = useState('');
     const [newDeadlineDate, setNewDeadlineDate] = useState('');
     const [newDeadlineType, setNewDeadlineType] = useState<'Exam' | 'Assignment' | 'Project' | 'Other'>('Exam');
+    const [icsImportNotice, setIcsImportNotice] = useState<string>('');
+    const icsFileRef = useRef<HTMLInputElement>(null);
 
     const handleAddRitual = () => {
         if (!newRitual.trim()) return;
@@ -56,6 +59,61 @@ export const StrategyTab: React.FC<Props> = ({
         handleSaveSettings({ ...settings, weeklyPlan: newPlan });
     };
 
+    const handleAutoSuggestWeek = () => {
+        if (subjects.length === 0) return;
+
+        const usage14: Record<string, number> = {};
+        const usage90: Record<string, number> = {};
+        subjects.forEach(s => {
+            usage14[s.id] = 0;
+            usage90[s.id] = 0;
+        });
+
+        const countUsage = (days: number, bucket: Record<string, number>) => {
+            getHistory(days).forEach(day => {
+                const touched = new Set<string>();
+                const { main1, main2, light } = day.selectedSubjects;
+                if (main1) touched.add(main1);
+                if (main2) touched.add(main2);
+                if (light) touched.add(light);
+                (day.additionalSubjects || []).forEach(id => touched.add(id));
+                Object.entries(day.subjectMinutes || {}).forEach(([id, mins]) => {
+                    if ((mins || 0) > 0) touched.add(id);
+                });
+                touched.forEach(id => {
+                    bucket[id] = (bucket[id] || 0) + 1;
+                });
+            });
+        };
+
+        countUsage(14, usage14);
+        countUsage(90, usage90);
+
+        const weakFirst = [...subjects]
+            .map(subject => {
+                const recent14 = usage14[subject.id] || 0;
+                const recent90 = usage90[subject.id] || 0;
+                const weighted = (recent14 * 2) + (recent90 * 0.5);
+                const priorityBoost = subject.priority === 'High' ? -2 : 0;
+                return { subject, weighted: weighted + priorityBoost };
+            })
+            .sort((a, b) => a.weighted - b.weighted)
+            .map(item => item.subject.id);
+
+        const picks = weakFirst.slice(0, Math.min(4, weakFirst.length));
+        if (picks.length === 0) return;
+
+        const newPlan = { ...settings.weeklyPlan };
+        for (let day = 0; day < 7; day++) {
+            const main1 = picks[day % picks.length] || null;
+            const main2 = picks.length > 1 ? picks[(day + 1) % picks.length] : null;
+            const light = picks.length > 2 ? picks[(day + 2) % picks.length] : (picks[0] || null);
+            newPlan[day] = { main1, main2, light };
+        }
+        handleSaveSettings({ ...settings, weeklyPlan: newPlan });
+        haptic.success();
+    };
+
     // Horizon Handlers
     const handleAddDeadline = () => {
         if (!newDeadlineTitle || !newDeadlineDate) return;
@@ -76,6 +134,25 @@ export const StrategyTab: React.FC<Props> = ({
         handleSaveSettings({ ...settings, deadlines: updatedDeadlines });
     };
 
+    const handleIcsUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const text = String(event.target?.result || '');
+                const result = importIcsCalendar(text);
+                handleSaveSettings(getAppSettings());
+                setIcsImportNotice(`Imported ${result.importedEvents} classes/events and ${result.importedDeadlines} deadlines.`);
+                haptic.success();
+            } catch (err) {
+                setIcsImportNotice('Failed to import ICS. Please try a valid calendar export.');
+                haptic.error();
+            }
+        };
+        reader.readAsText(file);
+    };
+
     return (
         <div className="text-zinc-900 dark:text-white space-y-8 animate-in fade-in slide-in-from-bottom-2">
             {/* HORIZON (Strategic Deadlines) */}
@@ -88,6 +165,24 @@ export const StrategyTab: React.FC<Props> = ({
                         <Flag size={16} className="text-primary-500" />
                         <span className="text-sm font-bold">Add Deadline</span>
                     </div>
+
+                    <div className="relative mb-3">
+                        <button
+                            className="w-full bg-indigo-600/10 border border-indigo-500/30 text-indigo-600 dark:text-indigo-300 rounded-lg py-2.5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 hover:bg-indigo-600/20 transition-colors"
+                        >
+                            <Upload size={14} /> Import Google/ICS Calendar
+                        </button>
+                        <input
+                            ref={icsFileRef}
+                            type="file"
+                            accept=".ics,text/calendar"
+                            onChange={handleIcsUpload}
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                        />
+                    </div>
+                    {icsImportNotice && (
+                        <p className="text-[11px] text-indigo-600 dark:text-indigo-300 mb-3">{icsImportNotice}</p>
+                    )}
 
                     <div className="space-y-3">
                         <input
@@ -185,13 +280,19 @@ export const StrategyTab: React.FC<Props> = ({
                 </h3>
 
                 <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4">
+                    <button
+                        onClick={handleAutoSuggestWeek}
+                        className="w-full mb-4 py-2.5 rounded-xl bg-primary-600 text-white text-xs font-bold uppercase tracking-wider hover:bg-primary-500 transition-colors active-scale"
+                    >
+                        Auto-Suggest Next Week
+                    </button>
                     <div className="flex items-center justify-between mb-6">
-                        <button onClick={() => setActivePlannerDay((prev) => (prev - 1 + 7) % 7)} className="p-2 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500"><ChevronLeft size={20} /></button>
+                        <button title="Previous Day" onClick={() => setActivePlannerDay((prev) => (prev - 1 + 7) % 7)} className="p-2 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500"><ChevronLeft size={20} /></button>
                         <div className="text-center">
                             <span className="block text-xl font-display font-bold text-zinc-900 dark:text-white">{DAYS[activePlannerDay]}</span>
                             <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Configure Auto-Fill</span>
                         </div>
-                        <button onClick={() => setActivePlannerDay((prev) => (prev + 1) % 7)} className="p-2 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500"><ChevronRight size={20} /></button>
+                        <button title="Next Day" onClick={() => setActivePlannerDay((prev) => (prev + 1) % 7)} className="p-2 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500"><ChevronRight size={20} /></button>
                     </div>
 
                     <div className="space-y-3">
@@ -206,6 +307,7 @@ export const StrategyTab: React.FC<Props> = ({
                                     <label className="text-[10px] font-bold text-zinc-500 uppercase mb-1 block">{slot.label}</label>
                                     <select
                                         value={savedId}
+                                        title={savedId ? subjects.find(s => s.id === savedId)?.name : '(No subject)'}
                                         onChange={(e) => handleWeeklyPlanChange(activePlannerDay, slot.key as any, e.target.value)}
                                         className="w-full bg-white dark:bg-black text-zinc-900 dark:text-white p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 focus:border-primary-500 outline-none text-sm transition-colors"
                                     >
@@ -215,6 +317,68 @@ export const StrategyTab: React.FC<Props> = ({
                                 </div>
                             );
                         })}
+                    </div>
+                </div>
+            </div>
+
+            <div className="space-y-4">
+                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                    <Flag size={12} /> Weekly Targets
+                </h3>
+                <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 space-y-4">
+                    <div>
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-sm font-bold text-zinc-900 dark:text-zinc-200">Deep Work Hours</span>
+                            <span className="font-mono text-primary-600 dark:text-primary-400">{settings.weeklyTargets.deepWorkHours}h</span>
+                        </div>
+                        <input
+                            type="range"
+                            min="4"
+                            max="30"
+                            step="1"
+                            value={settings.weeklyTargets.deepWorkHours}
+                            onChange={(e) => handleSaveSettings({
+                                ...settings,
+                                weeklyTargets: { ...settings.weeklyTargets, deepWorkHours: Number(e.target.value) }
+                            })}
+                            className="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-primary-500"
+                        />
+                    </div>
+                    <div>
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-sm font-bold text-zinc-900 dark:text-zinc-200">Zero-Violation Days</span>
+                            <span className="font-mono text-primary-600 dark:text-primary-400">{settings.weeklyTargets.zeroViolationDays}d</span>
+                        </div>
+                        <input
+                            type="range"
+                            min="1"
+                            max="7"
+                            step="1"
+                            value={settings.weeklyTargets.zeroViolationDays}
+                            onChange={(e) => handleSaveSettings({
+                                ...settings,
+                                weeklyTargets: { ...settings.weeklyTargets, zeroViolationDays: Number(e.target.value) }
+                            })}
+                            className="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-primary-500"
+                        />
+                    </div>
+                    <div>
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-sm font-bold text-zinc-900 dark:text-zinc-200">Ritual Completion Days</span>
+                            <span className="font-mono text-primary-600 dark:text-primary-400">{settings.weeklyTargets.ritualCompletionDays}d</span>
+                        </div>
+                        <input
+                            type="range"
+                            min="1"
+                            max="7"
+                            step="1"
+                            value={settings.weeklyTargets.ritualCompletionDays}
+                            onChange={(e) => handleSaveSettings({
+                                ...settings,
+                                weeklyTargets: { ...settings.weeklyTargets, ritualCompletionDays: Number(e.target.value) }
+                            })}
+                            className="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-primary-500"
+                        />
                     </div>
                 </div>
             </div>
