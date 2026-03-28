@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { DayLog, Subject, FocusSession } from '../types';
 import { saveLog, getAppSettings, getCustomSubjects } from '../services/storageService';
 import { playNoise, stopNoise, playSuccessTink, playAscensionSound, NoiseType } from '../services/audioGen';
-import { Play, Square, Smartphone, Check, Ban, Plus, Timer, Brain, Coffee, Volume2, ListTodo, X, Eye, EyeOff, Tag, Sparkles } from 'lucide-react';
+import { Play, Pause, Square, Smartphone, Check, Ban, Plus, Timer, Brain, Coffee, Volume2, ListTodo, X, Eye, EyeOff, Tag, Sparkles } from 'lucide-react';
 import { haptic } from '../services/hapticService';
 import { requestNotificationPermission, sendTimerNotification } from '../services/notificationService';
 import { getMinutesDiff, getCurrentTime24 } from '../services/timeService';
@@ -18,7 +18,7 @@ interface Props {
 
 type FocusMode = 'DEEP' | 'POMODORO';
 type TimerState = 'IDLE' | 'RUNNING' | 'PAUSED';
-type PomoPhase = 'WORK' | 'SHORT_BREAK' | 'LONG_BREAK';
+type PomoPhase = 'WORK' | 'SHORT_BREAK';
 
 const NOISE_THEMES: Record<NoiseType, { bg: string, accent: string, glow: string }> = {
   off: { bg: 'bg-black', accent: 'primary', glow: 'primary-900' },
@@ -38,6 +38,32 @@ const SUCCESS_TITLES = [
   "Depth Conquered",
   "Peak Protocol Meta"
 ];
+
+const getPomodoroDurationMinutes = (phase: PomoPhase) => {
+  if (phase === 'WORK') return 25;
+  return 5;
+};
+
+const getPomodoroPhaseMeta = (phase: PomoPhase) => {
+  if (phase === 'WORK') {
+    return {
+      title: 'Work Session',
+      subtitle: 'Lock in and push one clear task.',
+      accent: 'text-rose-300',
+      chip: 'bg-rose-500/10 border-rose-500/20 text-rose-300',
+      button: 'bg-rose-600 hover:bg-rose-500 shadow-rose-900/20',
+    };
+  }
+  if (phase === 'SHORT_BREAK') {
+    return {
+      title: 'Short Break',
+      subtitle: 'Reset briefly and come back sharp.',
+      accent: 'text-emerald-300',
+      chip: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300',
+      button: 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/20',
+    };
+  }
+};
 
 export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialTask = '', scheduledEnd = null, initialDurationMinutes = null }) => {
   const [timerState, setTimerState] = useState<TimerState>('IDLE');
@@ -66,6 +92,9 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
   const [showBrainDumpModal, setShowBrainDumpModal] = useState(false);
   const [quickNote, setQuickNote] = useState('');
   const [lastSessionMins, setLastSessionMins] = useState(0);
+  const [lastCompletedPomoPhase, setLastCompletedPomoPhase] = useState<PomoPhase>('WORK');
+  const [nextPomoPhase, setNextPomoPhase] = useState<PomoPhase>('SHORT_BREAK');
+  const [isPhaseAdvancing, setIsPhaseAdvancing] = useState(false);
 
   // Pomodoro Specific
   const [pomoPhase, setPomoPhase] = useState<PomoPhase>('WORK');
@@ -249,14 +278,16 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
     haptic.success();
   };
 
-  const startSession = () => {
+  const startSession = (phaseOverride?: PomoPhase) => {
     if (phoneState !== 'safe') return;
 
     let durationMinutes = selectedDuration;
+    const effectivePomoPhase = phaseOverride || pomoPhase;
     if (focusMode === 'POMODORO') {
-      if (pomoPhase === 'WORK') durationMinutes = 25;
-      else if (pomoPhase === 'SHORT_BREAK') durationMinutes = 5;
-      else if (pomoPhase === 'LONG_BREAK') durationMinutes = 15;
+      durationMinutes = getPomodoroDurationMinutes(effectivePomoPhase);
+      if (phaseOverride && phaseOverride !== pomoPhase) {
+        setPomoPhase(phaseOverride);
+      }
     }
 
     const durationSec = durationMinutes * 60;
@@ -323,9 +354,7 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
   const switchPomoPhase = (newPhase: PomoPhase) => {
     haptic.medium();
     setPomoPhase(newPhase);
-    let durationMinutes = 25;
-    if (newPhase === 'SHORT_BREAK') durationMinutes = 5;
-    else if (newPhase === 'LONG_BREAK') durationMinutes = 15;
+    const durationMinutes = getPomodoroDurationMinutes(newPhase);
 
     const durationSec = durationMinutes * 60;
     setTotalTime(durationSec);
@@ -337,7 +366,9 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
     if (intervalRef.current) window.clearInterval(intervalRef.current);
     intervalRef.current = null;
     setTimerState('IDLE');
-    setPhoneState('unchecked');
+    if (focusModeRef.current !== 'POMODORO') {
+      setPhoneState('unchecked');
+    }
     stopNoise(); // Stop background noise
 
     playSuccessTink();
@@ -384,20 +415,21 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
 
     const minutesDone = Math.ceil(currentTotalTime / 60);
     const currentLog = logRef.current;
+    const completedPomoPhase = currentPomoPhase;
+    let resolvedNextPomoPhase: PomoPhase = currentPomoPhase;
 
     // Handle Pomodoro Logic
     if (currentFocusMode === 'POMODORO') {
       if (currentPomoPhase === 'WORK') {
         const newCount = currentPomoCount + 1;
         setPomoCount(newCount);
-        if (newCount % 4 === 0) {
-          setPomoPhase('LONG_BREAK');
-        } else {
-          setPomoPhase('SHORT_BREAK');
-        }
+        resolvedNextPomoPhase = 'SHORT_BREAK';
       } else {
-        setPomoPhase('WORK');
+        resolvedNextPomoPhase = 'WORK';
       }
+      setLastCompletedPomoPhase(completedPomoPhase);
+      setNextPomoPhase(resolvedNextPomoPhase);
+      setPomoPhase(resolvedNextPomoPhase);
     }
 
     const isWorkPhase = currentPomoPhase === 'WORK';
@@ -423,7 +455,9 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
       deepWorkMinutes: currentLog.deepWorkMinutes + (isWorkPhase ? minutesDone : 0),
       subjectMinutes: updatedSubjectMinutes,
       additionalSubjects: updatedAdditionalSubjects,
-      schedule: currentLog.schedule.map(b => b.mode === 'Deep Work' ? { ...b, isCompleted: true } : b),
+      schedule: (currentFocusMode === 'DEEP' || isWorkPhase)
+        ? currentLog.schedule.map(b => b.mode === 'Deep Work' ? { ...b, isCompleted: true } : b)
+        : currentLog.schedule,
       focusSessions: (() => {
         const prev = currentLog.focusSessions || [];
         const startMeta = sessionStartRef.current;
@@ -438,6 +472,7 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
           taskName: currentTask || 'General Focus',
           noiseType: activeNoise,
           mode: currentFocusMode,
+          phase: currentFocusMode === 'POMODORO' ? currentPomoPhase : undefined,
           phoneViolationsDuringSession: Math.max(0, currentViolations - baseViolations),
         };
         return [...prev, session];
@@ -445,12 +480,14 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
     };
 
     saveLog(currentLog.date, newLog);
+    logRef.current = newLog;
     sessionStartRef.current = null;
     refreshLog();
 
     setLastSessionMins(minutesDone);
     setSuccessTitle(SUCCESS_TITLES[Math.floor(Math.random() * SUCCESS_TITLES.length)]);
     setShowSuccessModal(true);
+    setIsPhaseAdvancing(false);
 
     if (currentFocusMode === 'DEEP') {
       setSessionTask('');
@@ -461,6 +498,19 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
   const stopSession = () => {
     haptic.medium();
     setShowAbortModal(true);
+  };
+
+  const continueAfterSuccess = () => {
+    if (focusMode === 'POMODORO') {
+      setIsPhaseAdvancing(true);
+      startSession(nextPomoPhase);
+      window.setTimeout(() => {
+        setShowSuccessModal(false);
+        setIsPhaseAdvancing(false);
+      }, 180);
+      return;
+    }
+    setShowSuccessModal(false);
   };
 
   const confirmAbort = () => {
@@ -482,6 +532,22 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
   const circumference = 2 * Math.PI * radius;
   const progress = totalTime > 0 ? timeLeft / totalTime : 0;
   const strokeDashoffset = circumference - (progress * circumference);
+  const pomoMeta = getPomodoroPhaseMeta(pomoPhase);
+  const pomoCompletedPct = Math.round((1 - progress) * 100);
+  const upcomingPomoPhase: PomoPhase = pomoPhase === 'WORK' ? 'SHORT_BREAK' : 'WORK';
+  const stayInPomodoroShell = focusMode === 'POMODORO' && phoneState === 'safe' && (timerState !== 'IDLE' || showSuccessModal || isPhaseAdvancing);
+  const currentPomodoroElapsedMinutes = timerState === 'IDLE' ? 0 : Math.max(0, Math.ceil((totalTime - timeLeft) / 60));
+  const completedPomodoroSessions = logRef.current.focusSessions || [];
+  const savedPomodoroTotalMinutes = completedPomodoroSessions
+    .filter((session) => session.mode === 'POMODORO')
+    .reduce((sum, session) => sum + session.durationMinutes, 0);
+  const savedPomodoroWorkMinutes = completedPomodoroSessions
+    .filter((session) => session.mode === 'POMODORO' && session.phase !== 'SHORT_BREAK')
+    .reduce((sum, session) => sum + session.durationMinutes, 0);
+  const currentPomodoroTotalMinutes = focusMode === 'POMODORO' ? currentPomodoroElapsedMinutes : 0;
+  const currentPomodoroWorkMinutes = focusMode === 'POMODORO' && pomoPhase === 'WORK' ? currentPomodoroElapsedMinutes : 0;
+  const pomodoroTotalMinutes = savedPomodoroTotalMinutes + currentPomodoroTotalMinutes;
+  const pomodoroWorkMinutes = savedPomodoroWorkMinutes + currentPomodoroWorkMinutes;
 
   // --- VIEWS ---
 
@@ -536,45 +602,57 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
     );
   }
 
-  if (timerState === 'IDLE') {
+  if (timerState === 'IDLE' && !stayInPomodoroShell) {
+    const canStart = focusMode === 'DEEP' ? !!sessionTask.trim() : (pomoPhase === 'WORK' ? !!sessionTask.trim() : true);
+    const startButtonLabel = focusMode === 'DEEP'
+      ? `Start ${selectedDuration}m Focus`
+      : pomoPhase === 'WORK'
+        ? 'Start 25m Work'
+        : 'Start 5m Break';
+    const startButtonHint = focusMode === 'DEEP'
+      ? (sessionTask.trim() || 'Set a task to begin')
+      : pomoPhase === 'WORK'
+        ? (sessionTask.trim() || 'Set a task to begin')
+        : 'Recovery phase ready';
+
     return (
-      <div className="flex flex-col h-full px-6 py-6 pb-24 overflow-y-auto animate-in fade-in duration-500">
-        <div className="mb-6">
+      <div className="flex flex-col h-full px-5 py-5 pb-24 overflow-y-auto animate-in fade-in duration-500">
+        <div className="mb-5">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]"></div>
             <span className="text-emerald-500 text-xs font-mono tracking-widest uppercase">Environment Secure</span>
           </div>
-          <h2 className="text-4xl font-bold text-zinc-900 dark:text-white tracking-tight">Initiate Focus</h2>
+          <h2 className="text-3xl font-bold text-zinc-900 dark:text-white tracking-tight">Initiate Focus</h2>
         </div>
 
         {/* Focus Mode */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
+        <div className="grid grid-cols-2 gap-3 mb-5">
           <button
             onClick={() => setFocusMode('DEEP')}
-            className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all duration-300
+            className={`p-3.5 rounded-2xl border flex flex-col items-center gap-2 transition-all duration-300
               ${focusMode === 'DEEP'
                 ? 'bg-primary-600 border-primary-500 text-white shadow-lg shadow-primary-900/30'
                 : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
           >
-            <Brain size={24} />
-            <span className="text-sm font-bold">Deep Work</span>
+            <Brain size={22} />
+            <span className="text-xs font-bold">Deep Work</span>
           </button>
 
           <button
             onClick={() => { setFocusMode('POMODORO'); setPomoPhase('WORK'); setPomoCount(0); }}
-            className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all duration-300
+            className={`p-3.5 rounded-2xl border flex flex-col items-center gap-2 transition-all duration-300
               ${focusMode === 'POMODORO'
                 ? 'bg-rose-600 border-rose-500 text-white shadow-lg shadow-rose-900/30'
                 : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
           >
-            <Timer size={24} />
-            <span className="text-sm font-bold">Pomodoro</span>
+            <Timer size={22} />
+            <span className="text-xs font-bold">Pomodoro</span>
           </button>
         </div>
 
 
         {/* Main Intent */}
-        <div className="mb-6">
+        <div className="mb-5">
           <label className="text-xs text-zinc-500 uppercase font-bold tracking-wider mb-2 block flex items-center justify-between">
             Primary Intent
             <span className="text-[10px] text-zinc-600 font-normal normal-case">Select or Type</span>
@@ -602,7 +680,7 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
             <input
               type="text"
               placeholder={focusMode === 'DEEP' ? "e.g. Master Redux" : "e.g. Clear Inbox"}
-              className="w-full bg-white dark:bg-zinc-900/50 border-b-2 border-zinc-300 dark:border-zinc-800 py-3 pl-3 pr-10 text-xl text-zinc-900 dark:text-white outline-none focus:border-zinc-900 dark:focus:border-white transition-colors placeholder-zinc-500 dark:placeholder-zinc-700"
+              className="w-full bg-white dark:bg-zinc-900/50 border-b-2 border-zinc-300 dark:border-zinc-800 py-2.5 pl-3 pr-10 text-lg text-zinc-900 dark:text-white outline-none focus:border-zinc-900 dark:focus:border-white transition-colors placeholder-zinc-500 dark:placeholder:text-zinc-700"
               value={sessionTask}
               onChange={(e) => setSessionTask(e.target.value)}
             />
@@ -619,7 +697,7 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
         </div>
 
         {/* Sub-Tasks */}
-        <div className="mb-6">
+        <div className="mb-5">
           <div className="flex justify-between items-center mb-2">
             <label className="text-xs text-zinc-500 uppercase font-bold tracking-wider flex items-center gap-2">
               <ListTodo size={12} /> Steps (Optional)
@@ -649,7 +727,7 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
         </div>
 
         {/* Settings (Duration & Sound) */}
-        <div className="grid grid-cols-2 gap-4 mb-8">
+        <div className="grid grid-cols-2 gap-3 mb-6">
           {/* Duration */}
           <div>
             <label className="text-xs text-zinc-500 uppercase font-bold tracking-wider mb-2 block">
@@ -658,16 +736,15 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
             {focusMode === 'POMODORO' ? (
               <select
                 value={pomoPhase}
-                title={pomoPhase === 'WORK' ? 'Focus Phase: 25 minutes of deep work' : pomoPhase === 'SHORT_BREAK' ? 'Short Break: 5 minutes of rest' : 'Long Break: 15 minutes of rest'}
+                title={pomoPhase === 'WORK' ? 'Focus Phase: 25 minutes of deep work' : 'Short Break: 5 minutes of rest'}
                 onChange={(e) => {
                   haptic.light();
                   setPomoPhase(e.target.value as PomoPhase);
                 }}
-                className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:border-rose-500/50 outline-none appearance-none font-mono text-sm active-scale transition-all"
+                className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2.5 text-zinc-900 dark:text-white focus:border-rose-500/50 outline-none appearance-none font-mono text-sm active-scale transition-all"
               >
                 <option value="WORK">Work (25m)</option>
                 <option value="SHORT_BREAK">Short Break (5m)</option>
-                <option value="LONG_BREAK">Long Break (15m)</option>
               </select>
             ) : (
               <select
@@ -677,7 +754,7 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
                   haptic.light();
                   setSelectedDuration(Number(e.target.value));
                 }}
-                className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-zinc-900 dark:text-white focus:border-primary-500/50 outline-none appearance-none font-mono text-sm active-scale transition-all"
+                className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2.5 text-zinc-900 dark:text-white focus:border-primary-500/50 outline-none appearance-none font-mono text-sm active-scale transition-all"
               >
                 <option value={15}>15 Minutes</option>
                 <option value={30}>30 Minutes</option>
@@ -694,7 +771,7 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
             <label className="text-xs text-zinc-500 uppercase font-bold tracking-wider mb-2 block">Soundscape</label>
             <button
               onClick={() => { haptic.light(); toggleNoise(); }}
-              className={`w-full flex items-center justify-between p-3 rounded-xl border text-sm transition-all active-scale shadow-sm ${activeNoise !== 'off' ? 'bg-primary-500/10 border-primary-500/30 text-primary-400' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400'}`}
+              className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-sm transition-all active-scale shadow-sm ${activeNoise !== 'off' ? 'bg-primary-500/10 border-primary-500/30 text-primary-400' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400'}`}
             >
               <div className="flex flex-col items-start">
                 <span className="text-[10px] font-bold uppercase tracking-wider opacity-50 mb-0.5">Mode</span>
@@ -707,12 +784,12 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
           </div>
         </div>
 
-        <div className="mt-auto">
+        <div className="mt-1 sticky bottom-10 z-10 bg-gradient-to-t from-white via-white/95 to-transparent dark:from-zinc-950 dark:via-zinc-950/95 pt-2 pb-0">
           {/* Pomodoro Session Tracker (Idle Bottom) */}
           {focusMode === 'POMODORO' && (
-            <div className="flex justify-center gap-2 mb-6 animate-in fade-in zoom-in duration-700">
-              <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mr-2">Cycle</span>
-              {[1, 2, 3, 4].map(i => (
+            <div className="flex justify-center gap-2 mb-3 animate-in fade-in zoom-in duration-700">
+              <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mr-2">Work Done</span>
+              {[1, 2, 3, 4, 5].map(i => (
                 <div
                   key={i}
                   className={`w-3 h-3 rounded-full border transition-all duration-700
@@ -729,19 +806,18 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
               haptic.success();
               startSession();
             }}
-            disabled={focusMode === 'DEEP' ? !sessionTask.trim() : (pomoPhase === 'WORK' ? !sessionTask.trim() : false)}
-            className={`group w-full py-5 rounded-2xl flex items-center justify-center gap-3 text-lg font-bold uppercase tracking-widest transition-all duration-300 shadow-xl active-scale
-              ${(focusMode === 'DEEP' ? sessionTask.trim() : (pomoPhase === 'WORK' ? sessionTask.trim() : true))
+            disabled={!canStart}
+            className={`group w-full py-4 rounded-2xl flex items-center justify-center gap-3 text-base font-bold uppercase tracking-widest transition-all duration-300 shadow-xl active-scale
+              ${canStart
                 ? focusMode === 'DEEP' ? 'bg-primary-600 text-white hover:bg-primary-500 shadow-primary-900/20' : pomoPhase === 'WORK' ? 'bg-rose-600 text-white hover:bg-rose-500 shadow-rose-900/20' : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-emerald-900/20'
                 : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'}
             `}
           >
-            <Play size={24} className={(focusMode === 'DEEP' ? sessionTask.trim() : (pomoPhase === 'WORK' ? sessionTask.trim() : true)) ? 'fill-current' : ''} />
-            {focusMode === 'DEEP'
-              ? 'Initiate Depth'
-              : pomoPhase === 'WORK'
-                ? 'Start Session'
-                : 'Initiate Recovery'}
+            <Play size={22} className={canStart ? 'fill-current' : ''} />
+            <div className="flex flex-col items-start leading-none">
+              <span>{startButtonLabel}</span>
+              <span className={`mt-1 text-[10px] font-medium tracking-normal uppercase ${canStart ? 'text-white/75' : 'text-zinc-500'}`}>{startButtonHint}</span>
+            </div>
           </button>
         </div>
       </div>
@@ -750,6 +826,243 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
 
   // --- ACTIVE SESSION ---
   const theme = NOISE_THEMES[activeNoise] || NOISE_THEMES.off;
+
+  if (stayInPomodoroShell) {
+    return (
+      <div className="fixed inset-0 z-[100] bg-gradient-to-br from-zinc-950 via-black to-zinc-950 flex flex-col items-center justify-center overflow-hidden animate-in fade-in duration-700">
+        <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_top,rgba(244,63,94,0.12),transparent_35%),radial-gradient(circle_at_bottom,rgba(16,185,129,0.1),transparent_30%)]"></div>
+
+        <div className="relative z-10 w-full max-w-md px-6 py-8 flex flex-col h-full justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border backdrop-blur-md ${pomoMeta.chip}`}>
+                {pomoPhase === 'WORK' ? <Timer size={14} /> : <Coffee size={14} />}
+                <span className="text-[10px] font-bold uppercase tracking-widest">{pomoMeta.title}</span>
+              </div>
+              <button
+                onClick={() => { haptic.light(); setShowBrainDumpModal(true); }}
+                className="w-11 h-11 rounded-full border border-zinc-800 bg-zinc-900/70 text-zinc-400 hover:text-amber-400 hover:border-amber-500/30 transition-colors flex items-center justify-center"
+                title="Brain Dump"
+              >
+                <Brain size={18} />
+              </button>
+            </div>
+
+            <div className="text-center mb-8">
+              <h2 className="text-3xl font-bold text-white tracking-tight">{pomoMeta.title}</h2>
+              <p className="text-sm text-zinc-500 mt-2">{pomoMeta.subtitle}</p>
+              <p className="text-base text-zinc-300 mt-4 line-clamp-2 min-h-[1.5rem]">
+                {pomoPhase === 'WORK' ? (sessionTask || 'Focus block') : 'Step away, breathe, and reset.'}
+              </p>
+            </div>
+
+            <div className="rounded-[2rem] border border-zinc-800 bg-zinc-900/70 backdrop-blur-xl px-6 py-8 shadow-2xl">
+              <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-zinc-500 mb-4">
+                <span>Work Sessions</span>
+                <span>{pomoCount}</span>
+              </div>
+
+              <div className="flex justify-center gap-2 mb-6">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div
+                    key={i}
+                    className={`h-2.5 rounded-full transition-all duration-500 ${
+                      i <= pomoCount
+                        ? 'w-8 bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.45)]'
+                        : i === (pomoCount % 5) + 1 && pomoPhase === 'WORK'
+                          ? 'w-8 bg-rose-500/40'
+                        : 'w-2.5 bg-zinc-800'
+                    }`}
+                  />
+                ))}
+              </div>
+
+              <div className="text-center mb-6">
+                <div className="text-7xl font-mono font-bold tracking-tighter text-white tabular-nums">
+                  {formatTime(timeLeft)}
+                </div>
+                <div className="mt-2 text-xs uppercase tracking-[0.25em] text-zinc-500">
+                  {timerState === 'PAUSED' ? 'Paused' : 'Remaining'}
+                </div>
+              </div>
+
+              <div className="mb-5">
+                <div className="flex justify-between text-[11px] text-zinc-500 mb-2">
+                  <span>This phase</span>
+                  <span>{pomoCompletedPct}%</span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-zinc-800 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      pomoPhase === 'WORK' ? 'bg-rose-500' : pomoPhase === 'SHORT_BREAK' ? 'bg-emerald-500' : 'bg-sky-500'
+                    }`}
+                    style={{ width: `${Math.max(0, Math.min(100, pomoCompletedPct))}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 text-center text-xs">
+                <div className="rounded-2xl border border-zinc-800 bg-black/20 px-3 py-3">
+                  <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">Next</div>
+                  <div className={pomoMeta.accent}>{getPomodoroPhaseMeta(upcomingPomoPhase).title}</div>
+                </div>
+                <div className="rounded-2xl border border-zinc-800 bg-black/20 px-3 py-3">
+                  <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">Work Total</div>
+                  <div className="text-white font-semibold">{pomodoroWorkMinutes}m</div>
+                </div>
+                <div className="rounded-2xl border border-zinc-800 bg-black/20 px-3 py-3">
+                  <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">Pomodoro Total</div>
+                  <div className="text-white font-semibold">{pomodoroTotalMinutes}m</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {subTasks.length > 0 && pomoPhase === 'WORK' && (
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4">
+                <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-zinc-500 mb-3">
+                  <span>Steps</span>
+                  <span>{subTasks.length}</span>
+                </div>
+                <div className="space-y-2">
+                  {subTasks.map((task, i) => (
+                    <div key={i} className="text-sm text-zinc-300 flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-zinc-600"></div>
+                      <span>{task}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-4 gap-3">
+              <button
+                onClick={stopSession}
+                className="rounded-2xl border border-zinc-800 bg-zinc-900/70 py-3 text-zinc-400 hover:text-red-400 hover:border-red-500/30 transition-colors flex flex-col items-center gap-1"
+              >
+                <Square size={18} className="fill-current" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Abort</span>
+              </button>
+
+              <button
+                onClick={timerState === 'RUNNING' ? pauseSession : resumeSession}
+                className={`rounded-2xl border py-3 flex flex-col items-center gap-1 transition-colors ${
+                  timerState === 'RUNNING'
+                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                    : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                }`}
+              >
+                {timerState === 'RUNNING' ? <Pause size={18} /> : <Play size={18} className="fill-current" />}
+                <span className="text-[10px] font-bold uppercase tracking-wider">{timerState === 'RUNNING' ? 'Pause' : 'Resume'}</span>
+              </button>
+
+              <button
+                onClick={skipPhase}
+                className="rounded-2xl border border-zinc-800 bg-zinc-900/70 py-3 text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors flex flex-col items-center gap-1"
+              >
+                <Timer size={18} />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Skip</span>
+              </button>
+
+              <button
+                onClick={toggleNoise}
+                className={`rounded-2xl border py-3 flex flex-col items-center gap-1 transition-colors ${
+                  activeNoise !== 'off'
+                    ? 'border-primary-500/30 bg-primary-500/10 text-primary-300'
+                    : 'border-zinc-800 bg-zinc-900/70 text-zinc-400 hover:text-white'
+                }`}
+              >
+                <Volume2 size={18} />
+                <span className="text-[10px] font-bold uppercase tracking-wider">{activeNoise === 'off' ? 'Sound' : activeNoise}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {showAbortModal && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 animate-in fade-in duration-300">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowAbortModal(false)}></div>
+            <div className="relative w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl animate-in zoom-in-95 duration-300">
+              <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center mb-6 mx-auto">
+                <Ban size={32} className="text-red-500" />
+              </div>
+              <h3 className="text-2xl font-bold text-white text-center mb-3">Abort Session?</h3>
+              <p className="text-zinc-500 text-center mb-8 leading-relaxed">
+                Your current pomodoro phase will be cancelled. Are you sure?
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => setShowAbortModal(false)} className="py-4 rounded-xl bg-zinc-800 text-zinc-300 font-semibold hover:bg-zinc-700 transition-colors">Go Back</button>
+                <button onClick={confirmAbort} className="py-4 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-500 transition-colors shadow-lg shadow-red-900/20">Yes, Abort</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showBrainDumpModal && (
+          <div className="fixed inset-0 z-[350] flex items-center justify-center p-6 animate-in fade-in duration-300">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowBrainDumpModal(false)}></div>
+            <div className="relative w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom-5">
+              <div className="flex items-center gap-2 text-amber-500 mb-4">
+                <Brain size={18} />
+                <span className="text-xs font-bold uppercase tracking-widest">Momentary Distraction?</span>
+              </div>
+              <p className="text-zinc-400 text-sm mb-4 leading-relaxed">
+                Capture the thought and return to the cycle.
+              </p>
+              <textarea
+                autoFocus
+                value={quickNote}
+                onChange={(e) => setQuickNote(e.target.value)}
+                placeholder="What just popped into your head?"
+                className="w-full h-32 bg-black border border-zinc-800 rounded-xl p-4 text-white text-sm outline-none focus:border-amber-500/50 transition-colors resize-none mb-4"
+              />
+              <div className="flex gap-2">
+                <button onClick={() => setShowBrainDumpModal(false)} className="flex-1 py-3 text-zinc-500 text-sm font-semibold">Discard</button>
+                <button onClick={saveQuickNote} className="flex-[2] py-3 bg-amber-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-amber-900/20">Capture & Return</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showSuccessModal && (
+          <div className={`fixed inset-0 z-[400] flex items-center justify-center p-6 transition-opacity duration-200 ${isPhaseAdvancing ? 'opacity-0 pointer-events-none' : 'animate-in fade-in duration-500'}`}>
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-md"></div>
+            <div className="relative w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-10 shadow-2xl animate-in zoom-in-95 curve-bounce duration-500 text-center">
+              <div className="w-24 h-24 bg-rose-500/10 rounded-full flex items-center justify-center mb-8 mx-auto">
+                {lastCompletedPomoPhase === 'WORK' ? <Timer size={34} className="text-rose-400" /> : <Coffee size={34} className="text-emerald-400" />}
+              </div>
+              <h3 className="text-3xl font-display font-bold text-white mb-3 tracking-tight">
+                {`${getPomodoroPhaseMeta(lastCompletedPomoPhase).title} Complete`}
+              </h3>
+              <p className="text-zinc-400 mb-8 leading-relaxed max-w-[280px] mx-auto">
+                {lastCompletedPomoPhase === 'WORK'
+                  ? `Nice work. ${getPomodoroPhaseMeta(nextPomoPhase).title} is ready next.`
+                  : 'Recovery complete. Time to return to the next work session.'}
+              </p>
+              <div className="bg-zinc-800/50 rounded-2xl p-4 mb-8 flex items-center justify-around border border-zinc-800">
+                <div className="text-center">
+                  <span className="block text-[10px] uppercase font-bold text-zinc-500 tracking-widest mb-1">Done</span>
+                  <span className="text-white font-mono font-bold">{getPomodoroPhaseMeta(lastCompletedPomoPhase).title}</span>
+                </div>
+                <div className="w-px h-8 bg-zinc-700"></div>
+                <div className="text-center">
+                  <span className="block text-[10px] uppercase font-bold text-zinc-500 tracking-widest mb-1">Next</span>
+                  <span className="text-white font-bold">{getPomodoroPhaseMeta(nextPomoPhase).title}</span>
+                </div>
+              </div>
+              <button
+                onClick={continueAfterSuccess}
+                className={`w-full py-5 rounded-2xl text-white font-bold text-lg transition-all shadow-xl active-scale ${getPomodoroPhaseMeta(nextPomoPhase).button}`}
+              >
+                Start {getPomodoroPhaseMeta(nextPomoPhase).title}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={`fixed inset-0 z-[100] ${theme.bg} flex flex-col items-center justify-center overflow-hidden animate-in fade-in duration-700 transition-colors duration-1000`}>
@@ -783,7 +1096,7 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
                 : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'}`}>
             {focusMode === 'DEEP' ? <Brain size={14} /> : pomoPhase === 'WORK' ? <Timer size={14} /> : <Coffee size={14} />}
             <span className="text-[10px] font-bold uppercase tracking-widest">
-              {focusMode === 'DEEP' ? 'Deep Work' : pomoPhase === 'WORK' ? `Pomodoro (${pomoCount + 1}/4)` : 'Break Time'}
+              {focusMode === 'DEEP' ? 'Deep Work' : pomoPhase === 'WORK' ? `Pomodoro Work ${pomoCount + 1}` : 'Pomodoro Break'}
             </span>
           </div>
           <h3 className="text-zinc-200 text-xl font-medium text-center line-clamp-2 max-w-[80%] mb-2">{pomoPhase === 'WORK' ? sessionTask : 'Time to Recharge'}</h3>
@@ -805,12 +1118,6 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
                 className={`px-4 py-1.5 text-[9px] font-bold uppercase tracking-tight rounded-lg transition-all ${pomoPhase === 'SHORT_BREAK' ? 'bg-emerald-500/80 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
               >
                 Short
-              </button>
-              <button
-                onClick={() => switchPomoPhase('LONG_BREAK')}
-                className={`px-4 py-1.5 text-[9px] font-bold uppercase tracking-tight rounded-lg transition-all ${pomoPhase === 'LONG_BREAK' ? 'bg-emerald-500/80 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
-              >
-                Long
               </button>
             </div>
           )}
@@ -1023,9 +1330,7 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
             <p className="text-zinc-400 mb-8 leading-relaxed max-w-[280px] mx-auto">
               {focusMode === 'POMODORO' && pomoPhase === 'SHORT_BREAK'
                 ? "Session complete. Take 5 minutes to stretch and breathe. You're doing great."
-                : focusMode === 'POMODORO' && pomoPhase === 'LONG_BREAK'
-                  ? "Cycle complete! Take a long 15-minute rest. You've earned it."
-                  : focusMode === 'POMODORO' && pomoPhase === 'WORK'
+                : focusMode === 'POMODORO' && pomoPhase === 'WORK'
                     ? "Break's over. Time to dive back into the flow."
                     : `You've conquered ${lastSessionMins} minutes of deep intensity. Your momentum shifted in the right direction.`
               }
@@ -1041,10 +1346,10 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
               <div className="w-px h-8 bg-zinc-700"></div>
               <div className="text-center">
                 <span className="block text-[10px] uppercase font-bold text-zinc-500 tracking-widest mb-1">
-                  {focusMode === 'POMODORO' ? 'Cycle' : 'Mastery'}
+                  {focusMode === 'POMODORO' ? 'Work Total' : 'Mastery'}
                 </span>
                 <span className="text-white font-bold">
-                  {focusMode === 'POMODORO' ? `${pomoCount}/4` : (sessionTask || 'General')}
+                  {focusMode === 'POMODORO' ? `${pomodoroWorkMinutes}m work` : (sessionTask || 'General')}
                 </span>
               </div>
             </div>

@@ -37,6 +37,7 @@ export interface FocusSession {
   taskName: string;
   noiseType: string;
   mode: 'DEEP' | 'POMODORO';
+  phase?: 'WORK' | 'SHORT_BREAK';
   phoneViolationsDuringSession: number;
 }
 
