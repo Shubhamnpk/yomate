@@ -3,7 +3,7 @@ import { ProductivityEntry } from '../types';
 
 const PRODUCTIVITY_STORAGE_KEY = 'productivityEntries';
 
-const readEntries = (): ProductivityEntry[] => {
+export const getProductivityEntries = (): ProductivityEntry[] => {
   if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(PRODUCTIVITY_STORAGE_KEY);
@@ -42,7 +42,7 @@ const calculateStreak = (entries: ProductivityEntry[]) => {
 };
 
 export const useProductivity = () => {
-  const [entries, setEntries] = useState<ProductivityEntry[]>(() => readEntries());
+  const [entries, setEntries] = useState<ProductivityEntry[]>(() => getProductivityEntries());
 
   const saveEntries = useCallback((nextEntries: ProductivityEntry[]) => {
     const sorted = [...nextEntries].sort((a, b) => a.date.localeCompare(b.date));
@@ -51,13 +51,13 @@ export const useProductivity = () => {
   }, []);
 
   const addEntry = useCallback((entry: ProductivityEntry) => {
-    const existing = readEntries();
+    const existing = getProductivityEntries();
     const withoutSameDay = existing.filter((item) => item.date !== entry.date);
     saveEntries([...withoutSameDay, entry]);
   }, [saveEntries]);
 
   const deleteEntry = useCallback((id: string) => {
-    const existing = readEntries();
+    const existing = getProductivityEntries();
     saveEntries(existing.filter((item) => item.id !== id));
   }, [saveEntries]);
 
@@ -86,3 +86,4 @@ export const useProductivity = () => {
     exportEntries,
   };
 };
+

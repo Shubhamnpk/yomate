@@ -5,6 +5,7 @@ import { Subject, AppSettings, DayLog } from '../types';
 import { BarChart3, AlertTriangle, GraduationCap, Flag, Milestone, AlertOctagon, CalendarDays, Trophy } from 'lucide-react';
 import { WeeklyReport } from './WeeklyReport';
 import { formatDateBySystem, formatDateTimeBySystem, getYearInfoBySystem } from '../services/dateDisplay';
+import { getProductivityEntries } from '../hooks/useProductivity';
 
 export const StatsView: React.FC = React.memo(() => {
   const ACCENT_HEX: Record<AppSettings['themeAccent'], string> = {
@@ -14,14 +15,6 @@ export const StatsView: React.FC = React.memo(() => {
     violet: '#8b5cf6',
     orange: '#f97316',
   };
-  const hexToRgba = (hex: string, alpha: number) => {
-    const clean = hex.replace('#', '');
-    const bigint = parseInt(clean, 16);
-    const r = (bigint >> 16) & 255;
-    const g = (bigint >> 8) & 255;
-    const b = bigint & 255;
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  };
   // Use 14 days for coverage stat to be meaningful
   const history = useMemo(() => getHistory(14), []);
   const rolling90History = useMemo(() => getHistory(90), []);
@@ -29,22 +22,15 @@ export const StatsView: React.FC = React.memo(() => {
   const [settings, setSettings] = useState<AppSettings>(getAppSettings());
   const [showReport, setShowReport] = useState(false);
   const yearHistory = useMemo(() => getHistory(365), []);
-  const allRecentLogs = useMemo(() => getHistory(400), []);
   const [heatmapView, setHeatmapView] = useState<'90D' | 'YEAR'>('90D');
-  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('ALL');
+  const [heatmapType, setHeatmapType] = useState<'PRODUCTIVITY' | 'FOCUS' | 'SUBJECTS'>('PRODUCTIVITY');
   const accentHex = ACCENT_HEX[settings.themeAccent] || ACCENT_HEX.indigo;
+  const productivityEntries = useMemo(() => getProductivityEntries(), []);
 
   useEffect(() => {
     setSubjects(getCustomSubjects());
     setSettings(getAppSettings());
   }, []);
-
-  useEffect(() => {
-    if (selectedSubjectId === 'ALL') return;
-    if (!subjects.some(s => s.id === selectedSubjectId)) {
-      setSelectedSubjectId('ALL');
-    }
-  }, [subjects, selectedSubjectId]);
 
   const subjectStats = useMemo(() => {
     // ... existing logic ...
@@ -83,58 +69,107 @@ export const StatsView: React.FC = React.memo(() => {
 
 
   const heatmapData = useMemo(() => {
-    const intensityOpacity = (mins: number) => {
-      if (mins <= 0) return 0;
-      if (mins < 30) return 0.35;
-      if (mins < 90) return 0.65;
-      return 1;
-    };
-
-    type LogLike = Pick<DayLog, 'selectedSubjects' | 'subjectMinutes' | 'additionalSubjects'>;
-
-    const getSubjectCountForDay = (log: LogLike) => {
-      const subjects = new Set<string>();
+    const getSubjectCountForDay = (log: Pick<DayLog, 'selectedSubjects' | 'subjectMinutes' | 'additionalSubjects'>) => {
+      const touched = new Set<string>();
       const { main1, main2, light } = log.selectedSubjects;
-      if (main1) subjects.add(main1);
-      if (main2) subjects.add(main2);
-      if (light) subjects.add(light);
-      (log.additionalSubjects || []).forEach(id => subjects.add(id));
+      if (main1) touched.add(main1);
+      if (main2) touched.add(main2);
+      if (light) touched.add(light);
+      (log.additionalSubjects || []).forEach(id => touched.add(id));
       Object.entries((log.subjectMinutes || {}) as Record<string, number>).forEach(([id, mins]) => {
-        if ((mins || 0) > 0) subjects.add(id);
+        if ((mins || 0) > 0) touched.add(id);
       });
-      return subjects.size;
+      return touched.size;
     };
 
-    const getSubjectMinutesForDay = (log: LogLike, subjectId: string) => {
-      const fromMinutes = (log.subjectMinutes || {})[subjectId] || 0;
-      if (fromMinutes > 0) return fromMinutes;
-      const { main1, main2, light } = log.selectedSubjects;
-      if ((log.additionalSubjects || []).includes(subjectId)) return 30;
-      if (main1 === subjectId || main2 === subjectId || light === subjectId) return 30;
-      return 0;
+    const entryByDate = productivityEntries.reduce<Record<string, number>>((acc, entry) => {
+      acc[entry.date] = entry.totalScore;
+      return acc;
+    }, {});
+
+    const getProductivityDay = (date: string) => {
+      const score = entryByDate[date] ?? -5;
+      return { score, missed: !(date in entryByDate) };
     };
 
-    const getNinetyValue = (log: (typeof rolling90History)[number]) => {
-      if (selectedSubjectId === 'ALL') return getSubjectCountForDay(log);
-      return getSubjectMinutesForDay(log, selectedSubjectId);
+    const getProductivityFill = (score: number) => Math.max(0, Math.min(1, (score + 5) / 10));
+    const getProductivityColor = (score: number) => {
+      const normalized = getProductivityFill(score);
+      const saturation = 75;
+      const lightness = 45;
+      return `hsl(${normalized * 120} ${saturation}% ${lightness}%)`;
+    };
+    const getProductivityLabel = (score: number, missed: boolean) => {
+      if (missed) return 'Missed entry';
+      if (score <= -2) return 'Hard day';
+      if (score < 2) return 'Neutral day';
+      return 'Strong day';
     };
 
-    const getNinetyOpacity = (log: (typeof rolling90History)[number]) => {
-      if (selectedSubjectId === 'ALL') {
-        const count = getSubjectCountForDay(log);
-        if (count <= 0) return 0;
-        return Math.min(1, 0.2 + count * 0.2);
+    const getFocusFill = (minutes: number) => Math.max(0, Math.min(1, minutes / 180));
+    const getFocusColor = (minutes: number) => {
+      const normalized = getFocusFill(minutes);
+      return `hsl(${200 - normalized * 65} 85% ${58 - normalized * 18}%)`;
+    };
+    const getFocusLabel = (minutes: number) => {
+      if (minutes <= 0) return 'No focus';
+      if (minutes < 45) return 'Light focus';
+      if (minutes < 120) return 'Focused day';
+      return 'Deep focus day';
+    };
+
+    const getSubjectFill = (count: number) => Math.max(0, Math.min(1, count / Math.max(subjects.length || 1, 4)));
+    const getSubjectColor = (count: number) => {
+      const normalized = getSubjectFill(count);
+      return `hsl(${260 - normalized * 110} 70% ${64 - normalized * 18}%)`;
+    };
+    const getSubjectLabel = (count: number) => {
+      if (count <= 0) return 'No subjects';
+      if (count === 1) return 'Single subject';
+      if (count <= 3) return 'Balanced day';
+      return 'Wide coverage day';
+    };
+
+    const getMetricForLog = (log: DayLog) => {
+      if (heatmapType === 'FOCUS') return log.deepWorkMinutes || 0;
+      if (heatmapType === 'SUBJECTS') return getSubjectCountForDay(log);
+      return getProductivityDay(log.date).score;
+    };
+
+    const getFill = (value: number) => {
+      if (heatmapType === 'FOCUS') return getFocusFill(value);
+      if (heatmapType === 'SUBJECTS') return getSubjectFill(value);
+      return getProductivityFill(value);
+    };
+
+    const getColor = (value: number) => {
+      if (heatmapType === 'FOCUS') return getFocusColor(value);
+      if (heatmapType === 'SUBJECTS') return getSubjectColor(value);
+      return getProductivityColor(value);
+    };
+
+    const getTooltip = (date: string, value: number, missed = false) => {
+      const dateLabel = formatDateBySystem(date, settings.dateSystem, { year: 'numeric', month: 'short', day: 'numeric' });
+      if (heatmapType === 'FOCUS') {
+        return `${dateLabel} • ${getFocusLabel(value)} • ${value}m`;
       }
-      return intensityOpacity(getSubjectMinutesForDay(log, selectedSubjectId));
+      if (heatmapType === 'SUBJECTS') {
+        return `${dateLabel} • ${getSubjectLabel(value)} • ${value} subjects`;
+      }
+      return `${dateLabel} • ${getProductivityLabel(value, missed)} • ${value.toFixed(2)}`;
     };
 
-    const weeks90: typeof rolling90History[] = [];
-    for (let i = 0; i < rolling90History.length; i += 7) {
-      weeks90.push(rolling90History.slice(i, i + 7));
+    const ninetyDays = rolling90History.map((day) => ({
+      date: day.date,
+      value: getMetricForLog(day),
+      missed: heatmapType === 'PRODUCTIVITY' ? getProductivityDay(day.date).missed : false,
+    }));
+    const weeks90: typeof ninetyDays[] = [];
+    for (let i = 0; i < ninetyDays.length; i += 7) {
+      weeks90.push(ninetyDays.slice(i, i + 7));
     }
-    const subjectActiveDays90 = rolling90History.filter(d => getNinetyValue(d) > 0).length;
-    const subjectCoverage90 = Math.round((subjectActiveDays90 / rolling90History.length) * 100);
-    const avgSubjectsPerDay90 = Number((rolling90History.reduce((sum, d) => sum + getNinetyValue(d), 0) / rolling90History.length).toFixed(1));
+    const loggedDays90 = ninetyDays.filter((day) => heatmapType === 'PRODUCTIVITY' ? day.value > -5 : day.value > 0).length;
+    const average90 = Number((ninetyDays.reduce((sum, day) => sum + day.value, 0) / Math.max(ninetyDays.length, 1)).toFixed(heatmapType === 'PRODUCTIVITY' ? 2 : 1));
 
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -142,24 +177,25 @@ export const StatsView: React.FC = React.memo(() => {
     const yearStart = yearInfo.start;
     const yearEnd = yearInfo.end;
     const totalYearDays = Math.floor((yearEnd.getTime() - yearStart.getTime()) / 86400000) + 1;
-    const logsByDate = allRecentLogs.reduce<Record<string, (typeof allRecentLogs)[number]>>((acc, l) => {
-      acc[l.date] = l;
-      return acc;
-    }, {});
-    const yearDays: Array<{ date: string; value: number; isFuture: boolean; isToday: boolean }> = [];
+    const yearDays: Array<{ date: string; value: number; missed: boolean; isFuture: boolean; isToday: boolean }> = [];
 
     for (let d = new Date(yearStart); d <= yearEnd; d.setDate(d.getDate() + 1)) {
       const dStr = d.toISOString().split('T')[0];
       const dayDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
       const isFuture = dayDate > today;
       const isToday = dayDate.getTime() === today.getTime();
-      const log = logsByDate[dStr];
-      const value = log
-        ? (selectedSubjectId === 'ALL' ? getSubjectCountForDay(log) : getSubjectMinutesForDay(log, selectedSubjectId))
-        : 0;
+      const matchingLog = yearHistory.find((log) => log.date === dStr);
+      const productivityDay = getProductivityDay(dStr);
       yearDays.push({
         date: dStr,
-        value,
+        value: isFuture
+          ? (heatmapType === 'PRODUCTIVITY' ? -5 : 0)
+          : heatmapType === 'PRODUCTIVITY'
+            ? productivityDay.score
+            : matchingLog
+              ? getMetricForLog(matchingLog)
+              : 0,
+        missed: !isFuture && heatmapType === 'PRODUCTIVITY' ? productivityDay.missed : false,
         isFuture,
         isToday,
       });
@@ -171,15 +207,14 @@ export const StatsView: React.FC = React.memo(() => {
     }
 
     const elapsedDays = yearDays.filter(d => !d.isFuture).length;
-    const completedElapsedDays = yearDays.filter(d => !d.isFuture && d.value > 0).length;
+    const completedElapsedDays = yearDays.filter(d => !d.isFuture && (heatmapType === 'PRODUCTIVITY' ? d.value > -5 : d.value > 0)).length;
     const yearCompletionPct = elapsedDays > 0 ? Math.round((completedElapsedDays / elapsedDays) * 100) : 0;
     const yearGonePct = Math.round((elapsedDays / totalYearDays) * 100);
 
     return {
       weeks90,
-      subjectActiveDays90,
-      subjectCoverage90,
-      avgSubjectsPerDay90,
+      loggedDays90,
+      average90,
       yearColumns,
       elapsedDays,
       completedElapsedDays,
@@ -187,12 +222,11 @@ export const StatsView: React.FC = React.memo(() => {
       yearGonePct,
       totalYearDays,
       yearLabel: yearInfo.label,
-      getSubjectCountForDay,
-      getNinetyValue,
-      getNinetyOpacity,
-      intensityOpacity,
+      getFill,
+      getColor,
+      getTooltip,
     };
-  }, [rolling90History, allRecentLogs, selectedSubjectId, settings.dateSystem]);
+  }, [rolling90History, productivityEntries, settings.dateSystem, heatmapType, yearHistory, subjects.length]);
 
   const achievementMeta: Record<string, string> = {
     FIRST_100_MIN_DAY: 'First 100 minutes in a day',
@@ -331,7 +365,7 @@ export const StatsView: React.FC = React.memo(() => {
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-2">
-            <CalendarDays size={14} /> Focus Heatmap
+            <CalendarDays size={14} /> Heatmaps
           </h3>
           <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1">
             <button
@@ -349,26 +383,45 @@ export const StatsView: React.FC = React.memo(() => {
           </div>
         </div>
 
-        <div className="mb-2">
-          <select title="Select Subject" value={selectedSubjectId} onChange={(e) => setSelectedSubjectId(e.target.value)} className="w-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-700 dark:text-zinc-200 font-semibold outline-none focus:border-primary-500">
-            <option value="ALL">All Subjects</option>
-            {subjects.map(s => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 mb-3">
+          {[
+            { id: 'PRODUCTIVITY', label: 'Productivity' },
+            { id: 'FOCUS', label: 'Focus' },
+            { id: 'SUBJECTS', label: 'Subjects' },
+          ].map((item) => {
+            const active = heatmapType === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setHeatmapType(item.id as 'PRODUCTIVITY' | 'FOCUS' | 'SUBJECTS')}
+                className={`shrink-0 flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-bold transition-colors ${
+                  active
+                    ? 'bg-primary-500/12 border-primary-500/30 text-primary-700 dark:text-primary-300'
+                    : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500'
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${active ? 'bg-primary-500' : 'bg-zinc-400'}`}></span>
+                {item.label}
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex items-end justify-between mb-2">
           {heatmapView === '90D' ? (
             <>
               <div>
-                <p className="text-lg font-mono font-bold text-zinc-900 dark:text-white">{heatmapData.subjectCoverage90}%</p>
+                <p className="text-lg font-mono font-bold text-zinc-900 dark:text-white">{heatmapData.average90}</p>
                 <p className="text-[10px] text-zinc-500">
-                  {heatmapData.subjectActiveDays90}/90 {selectedSubjectId === 'ALL' ? 'subject-active days' : 'active days'}
+                  {heatmapType === 'PRODUCTIVITY'
+                    ? 'Avg productivity score across 90 days'
+                    : heatmapType === 'FOCUS'
+                      ? 'Avg focus minutes across 90 days'
+                      : 'Avg subjects touched across 90 days'}
                 </p>
               </div>
               <p className="text-[10px] text-zinc-500">
-                {selectedSubjectId === 'ALL' ? `Avg subjects/day: ${heatmapData.avgSubjectsPerDay90}` : `Avg mins/day: ${heatmapData.avgSubjectsPerDay90}`}
+                {heatmapData.loggedDays90}/90 {heatmapType === 'PRODUCTIVITY' ? 'journaled days' : heatmapType === 'FOCUS' ? 'focus-active days' : 'subject-active days'}
               </p>
             </>
           ) : (
@@ -376,7 +429,11 @@ export const StatsView: React.FC = React.memo(() => {
               <div>
                 <p className="text-lg font-mono font-bold text-zinc-900 dark:text-white">{heatmapData.yearCompletionPct}%</p>
                 <p className="text-[10px] text-zinc-500">
-                  {selectedSubjectId === 'ALL' ? 'Subject-active completion' : 'Subject completion'} in {heatmapData.yearLabel}
+                  {heatmapType === 'PRODUCTIVITY'
+                    ? `Productivity check-in coverage in ${heatmapData.yearLabel}`
+                    : heatmapType === 'FOCUS'
+                      ? `Focus-active coverage in ${heatmapData.yearLabel}`
+                      : `Subject coverage in ${heatmapData.yearLabel}`}
                 </p>
               </div>
               <p className="text-[10px] text-zinc-500">
@@ -398,13 +455,12 @@ export const StatsView: React.FC = React.memo(() => {
                     {Array.from({ length: 7 }).map((_, rowIdx) => {
                       const day = week[rowIdx];
                       if (!day) return <div key={`w90-empty-${weekIdx}-${rowIdx}`} className="w-full h-full rounded-[2px] bg-transparent" />;
-                      const opacity = heatmapData.getNinetyOpacity(day);
                       return (
                         <div
                           key={day.date}
-                          title={`${formatDateBySystem(day.date, settings.dateSystem, { year: 'numeric', month: 'short', day: 'numeric' })} • ${selectedSubjectId === 'ALL' ? `${heatmapData.getSubjectCountForDay(day)} subjects` : `${heatmapData.getNinetyValue(day)} mins`}`}
-                          className={`w-full h-full rounded-[2px] transition-colors ${heatmapData.getNinetyValue(day) === 0 ? 'bg-zinc-200 dark:bg-zinc-800' : ''}`}
-                          style={heatmapData.getNinetyValue(day) > 0 ? { backgroundColor: hexToRgba(accentHex, opacity) } : undefined}
+                          title={heatmapData.getTooltip(day.date, day.value, day.missed)}
+                          className="w-full h-full rounded-[2px] transition-colors"
+                          style={{ backgroundColor: heatmapData.getColor(day.value), opacity: Math.max(0.22, heatmapData.getFill(day.value)) }}
                         />
                       );
                     })}
@@ -424,16 +480,15 @@ export const StatsView: React.FC = React.memo(() => {
                       return (
                         <div
                           key={day.date}
-                          title={`${formatDateBySystem(day.date, settings.dateSystem, { year: 'numeric', month: 'short', day: 'numeric' })} • ${selectedSubjectId === 'ALL' ? `${day.value} subjects` : `${day.value} mins`}`}
-                          className={`aspect-square rounded-full transition-colors ${day.isFuture ? 'bg-zinc-100 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700' : day.isToday ? 'bg-zinc-200 dark:bg-zinc-800' : day.value > 0 ? '' : 'bg-zinc-200 dark:bg-zinc-800'}`}
+                          title={heatmapData.getTooltip(day.date, day.value, day.missed)}
+                          className={`aspect-square rounded-full transition-colors ${day.isFuture ? 'bg-zinc-100 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700' : ''}`}
                           style={
                             day.isFuture
                               ? undefined
-                              : day.isToday
-                                ? { backgroundImage: `linear-gradient(to right, ${accentHex} 50%, transparent 50%)` }
-                                : day.value > 0
-                                  ? { backgroundColor: accentHex }
-                                  : undefined
+                              : {
+                                  backgroundColor: heatmapData.getColor(day.value),
+                                  opacity: Math.max(0.22, heatmapData.getFill(day.value)),
+                                }
                           }
                         />
                       );
@@ -446,24 +501,41 @@ export const StatsView: React.FC = React.memo(() => {
 
         {heatmapView === '90D' ? (
           <div className="flex items-center justify-between mt-4 text-[10px] text-zinc-500">
-            <span>Less</span>
+            <span>{heatmapType === 'PRODUCTIVITY' ? '-5' : heatmapType === 'FOCUS' ? '0m' : '0'}</span>
             <div className="flex items-center gap-1">
-              <div className="w-2.5 h-2.5 rounded-sm bg-zinc-200 dark:bg-zinc-800"></div>
-              <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: hexToRgba(accentHex, 0.35) }}></div>
-              <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: hexToRgba(accentHex, 0.65) }}></div>
-              <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: accentHex }}></div>
+              {(heatmapType === 'PRODUCTIVITY'
+                ? [-5, -2.5, 0, 2.5, 5]
+                : heatmapType === 'FOCUS'
+                  ? [0, 30, 60, 120, 180]
+                  : [0, 1, 2, 3, 4]
+              ).map((value) => (
+                <div
+                  key={value}
+                  className="w-2.5 h-2.5 rounded-sm"
+                  style={{ backgroundColor: heatmapData.getColor(value), opacity: Math.max(0.22, heatmapData.getFill(value)) }}
+                ></div>
+              ))}
             </div>
-            <span>More</span>
+            <span>{heatmapType === 'PRODUCTIVITY' ? '+5' : heatmapType === 'FOCUS' ? '180m+' : '4+'}</span>
           </div>
         ) : (
           <div className="flex items-center justify-between mt-4 text-[10px] text-zinc-500">
-            <span>Unfilled</span>
+            <span>{heatmapType === 'PRODUCTIVITY' ? '-5' : heatmapType === 'FOCUS' ? '0m' : '0'}</span>
             <div className="flex items-center gap-1">
-              <div className="w-2.5 h-2.5 rounded-full bg-zinc-200 dark:bg-zinc-800"></div>
-              <div className="w-2.5 h-2.5 rounded-full bg-zinc-200 dark:bg-zinc-800" style={{ backgroundImage: `linear-gradient(to right, ${accentHex} 50%, transparent 50%)` }}></div>
-              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: accentHex }}></div>
+              {(heatmapType === 'PRODUCTIVITY'
+                ? [-5, 0, 5]
+                : heatmapType === 'FOCUS'
+                  ? [0, 90, 180]
+                  : [0, 2, 4]
+              ).map((value) => (
+                <div
+                  key={value}
+                  className="w-2.5 h-2.5 rounded-full"
+                  style={{ backgroundColor: heatmapData.getColor(value), opacity: Math.max(0.22, heatmapData.getFill(value)) }}
+                ></div>
+              ))}
             </div>
-            <span>Filled</span>
+            <span>{heatmapType === 'PRODUCTIVITY' ? '+5' : heatmapType === 'FOCUS' ? '180m+' : '4+'}</span>
           </div>
         )}
       </div>

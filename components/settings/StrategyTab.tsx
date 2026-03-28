@@ -1,6 +1,6 @@
 
 import React, { useRef, useState } from 'react';
-import { CheckCircle2, Plus, X, CalendarDays, ChevronLeft, ChevronRight, Sparkles, Star, Clock, Flag, AlertOctagon, Milestone, Trash2, Upload } from 'lucide-react';
+import { CheckCircle2, Plus, X, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Star, Clock, Flag, AlertOctagon, Milestone, Trash2, Upload } from 'lucide-react';
 import { AppSettings, Subject, DayLog, Deadline } from '../../types';
 import { haptic } from '../../services/hapticService';
 import { formatDateBySystem } from '../../services/dateDisplay';
@@ -29,6 +29,15 @@ export const StrategyTab: React.FC<Props> = ({
     const [newMonthlyGoal, setNewMonthlyGoal] = useState('');
     const [newDailyGoal, setNewDailyGoal] = useState('');
     const [activePlannerDay, setActivePlannerDay] = useState(new Date().getDay());
+    const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+        horizon: false,
+        rituals: false,
+        productivityGoals: false,
+        weeklyProtocol: false,
+        weeklyTargets: false,
+        suggestions: false,
+        workflow: false,
+    });
 
     // Horizon State (Now part of Strategy)
     const [newDeadlineTitle, setNewDeadlineTitle] = useState('');
@@ -172,14 +181,24 @@ export const StrategyTab: React.FC<Props> = ({
         reader.readAsText(file);
     };
 
+    const toggleSection = (key: keyof typeof openSections) => {
+        setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+    };
+
+    const sectionHeaderClass = "w-full flex items-center justify-between gap-3 text-left px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900";
+    const sectionBodyClass = "mt-3";
+
     return (
         <div className="text-zinc-900 dark:text-white space-y-8 animate-in fade-in slide-in-from-bottom-2">
             {/* HORIZON (Strategic Deadlines) */}
             <div className="space-y-4">
-                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
-                    <Milestone size={12} /> Strategic Horizon
-                </h3>
-                <div className="bg-zinc-100 dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+                <button type="button" onClick={() => toggleSection('horizon')} className={sectionHeaderClass}>
+                    <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                        <Milestone size={12} /> Strategic Horizon
+                    </span>
+                    <ChevronDown size={16} className={`text-zinc-500 transition-transform ${openSections.horizon ? 'rotate-180' : ''}`} />
+                </button>
+                {openSections.horizon && <div className={`${sectionBodyClass} bg-zinc-100 dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800`}>
                     <div className="flex items-center gap-2 mb-4">
                         <Flag size={16} className="text-primary-500" />
                         <span className="text-sm font-bold">Add Deadline</span>
@@ -260,15 +279,18 @@ export const StrategyTab: React.FC<Props> = ({
                             );
                         })}
                     </div>
-                </div>
+                </div>}
             </div>
 
             {/* RITUALS */}
             <div className="space-y-4">
-                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
-                    <CheckCircle2 size={12} /> Daily Rituals
-                </h3>
-                <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4">
+                <button type="button" onClick={() => toggleSection('rituals')} className={sectionHeaderClass}>
+                    <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                        <CheckCircle2 size={12} /> Daily Rituals
+                    </span>
+                    <ChevronDown size={16} className={`text-zinc-500 transition-transform ${openSections.rituals ? 'rotate-180' : ''}`} />
+                </button>
+                {openSections.rituals && <div className={`${sectionBodyClass} bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4`}>
                     <div className="flex gap-2 mb-4">
                         <input
                             value={newRitual}
@@ -289,14 +311,17 @@ export const StrategyTab: React.FC<Props> = ({
                             <p className="text-xs text-zinc-500 text-center py-2">No daily rituals defined.</p>
                         )}
                     </div>
-                </div>
+                </div>}
             </div>
 
             <div className="space-y-4">
-                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
-                    <Flag size={12} /> Productivity Goals
-                </h3>
-                <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 space-y-5">
+                <button type="button" onClick={() => toggleSection('productivityGoals')} className={sectionHeaderClass}>
+                    <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                        <Flag size={12} /> Productivity Goals
+                    </span>
+                    <ChevronDown size={16} className={`text-zinc-500 transition-transform ${openSections.productivityGoals ? 'rotate-180' : ''}`} />
+                </button>
+                {openSections.productivityGoals && <div className={`${sectionBodyClass} bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 space-y-5`}>
                     <div>
                         <p className="text-sm font-bold text-zinc-900 dark:text-white mb-3">Monthly Goals Template</p>
                         <div className="flex gap-2 mb-3">
@@ -346,16 +371,19 @@ export const StrategyTab: React.FC<Props> = ({
                             ))}
                         </div>
                     </div>
-                </div>
+                </div>}
             </div>
 
             {/* Weekly Planner */}
             <div className="space-y-4">
-                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
-                    <CalendarDays size={12} /> Weekly Protocol (Automation)
-                </h3>
+                <button type="button" onClick={() => toggleSection('weeklyProtocol')} className={sectionHeaderClass}>
+                    <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                        <CalendarDays size={12} /> Weekly Protocol (Automation)
+                    </span>
+                    <ChevronDown size={16} className={`text-zinc-500 transition-transform ${openSections.weeklyProtocol ? 'rotate-180' : ''}`} />
+                </button>
 
-                <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4">
+                {openSections.weeklyProtocol && <div className={`${sectionBodyClass} bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4`}>
                     <button
                         onClick={handleAutoSuggestWeek}
                         className="w-full mb-4 py-2.5 rounded-xl bg-primary-600 text-white text-xs font-bold uppercase tracking-wider hover:bg-primary-500 transition-colors active-scale"
@@ -394,14 +422,17 @@ export const StrategyTab: React.FC<Props> = ({
                             );
                         })}
                     </div>
-                </div>
+                </div>}
             </div>
 
             <div className="space-y-4">
-                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
-                    <Flag size={12} /> Weekly Targets
-                </h3>
-                <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 space-y-4">
+                <button type="button" onClick={() => toggleSection('weeklyTargets')} className={sectionHeaderClass}>
+                    <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                        <Flag size={12} /> Weekly Targets
+                    </span>
+                    <ChevronDown size={16} className={`text-zinc-500 transition-transform ${openSections.weeklyTargets ? 'rotate-180' : ''}`} />
+                </button>
+                {openSections.weeklyTargets && <div className={`${sectionBodyClass} bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 space-y-4`}>
                     <div>
                         <div className="flex justify-between items-center mb-2">
                             <span className="text-sm font-bold text-zinc-900 dark:text-zinc-200">Deep Work Hours</span>
@@ -456,13 +487,20 @@ export const StrategyTab: React.FC<Props> = ({
                             className="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-primary-500"
                         />
                     </div>
-                </div>
+                </div>}
             </div>
 
             <hr className="border-zinc-200 dark:border-zinc-800" />
 
             {/* Recommendations */}
-            <div className="bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-900/20 dark:to-zinc-900 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl p-5">
+            <div>
+                <button type="button" onClick={() => toggleSection('suggestions')} className={sectionHeaderClass}>
+                    <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                        <Sparkles size={12} /> Smart Suggestions
+                    </span>
+                    <ChevronDown size={16} className={`text-zinc-500 transition-transform ${openSections.suggestions ? 'rotate-180' : ''}`} />
+                </button>
+                {openSections.suggestions && <div className={`${sectionBodyClass} bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-900/20 dark:to-zinc-900 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl p-5`}>
                 <div className="flex items-center gap-2 mb-4 text-indigo-500 dark:text-indigo-400">
                     <Sparkles size={18} />
                     <h3 className="text-sm font-bold uppercase tracking-wider">Smart Suggestions</h3>
@@ -496,13 +534,17 @@ export const StrategyTab: React.FC<Props> = ({
                 ) : (
                     <p className="text-zinc-500 text-xs">No specific recommendations right now.</p>
                 )}
+                </div>}
             </div>
 
             <div className="space-y-4">
-                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
-                    <Clock size={12} /> Workflow
-                </h3>
-                <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4">
+                <button type="button" onClick={() => toggleSection('workflow')} className={sectionHeaderClass}>
+                    <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                        <Clock size={12} /> Workflow
+                    </span>
+                    <ChevronDown size={16} className={`text-zinc-500 transition-transform ${openSections.workflow ? 'rotate-180' : ''}`} />
+                </button>
+                {openSections.workflow && <div className={`${sectionBodyClass} bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4`}>
                     <div className="flex justify-between items-center mb-4">
                         <span className="text-sm font-bold text-zinc-900 dark:text-zinc-200">Default Focus Duration</span>
                         <span className="font-mono text-primary-600 dark:text-primary-400">{settings.defaultFocusMinutes}m</span>
@@ -514,7 +556,7 @@ export const StrategyTab: React.FC<Props> = ({
                         onChange={(e) => handleSaveSettings({ ...settings, defaultFocusMinutes: Number(e.target.value) })}
                         className="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-primary-500"
                     />
-                </div>
+                </div>}
             </div>
         </div>
     );

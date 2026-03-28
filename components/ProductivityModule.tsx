@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ProductivityEntry } from '../types';
 import { useProductivity } from '../hooks/useProductivity';
 import { CheckCircle2, Flame, LineChart, Plus, Trash2 } from 'lucide-react';
 import { getAppSettings, saveAppSettings } from '../services/storageService';
+import { ClickToggleItem } from './ui/click-toggle-item';
 
 interface GoalItem {
   id: string;
@@ -84,6 +85,7 @@ export const ProductivityModule: React.FC<Props> = ({
   const [saved, setSaved] = useState(false);
   const [showTomorrowPrompt, setShowTomorrowPrompt] = useState(false);
   const [showTomorrowEditor, setShowTomorrowEditor] = useState(false);
+  const [locationStatus, setLocationStatus] = useState<'idle' | 'loading' | 'detected' | 'failed'>('idle');
   const [tomorrowGoals, setTomorrowGoals] = useState(() => {
     const settings = getAppSettings();
     return {
@@ -105,6 +107,42 @@ export const ProductivityModule: React.FC<Props> = ({
       (form.gratitudeScore * 0.1);
     return Number(total.toFixed(2));
   }, [goalStats.goalsScore, form.learningScore, form.prosConsScore, form.gratitudeScore]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const autofillLocation = async () => {
+      if (form.location.trim()) return;
+      setLocationStatus('loading');
+
+      try {
+        const response = await fetch('https://ipwho.is/', {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+        });
+        if (!response.ok) throw new Error('location lookup failed');
+        const data = await response.json();
+        if (isCancelled || !data?.success) throw new Error('location lookup failed');
+
+        const parts = [data.city, data.region, data.country].filter(Boolean);
+        if (parts.length === 0) throw new Error('empty location');
+
+        setForm((prev) => {
+          if (prev.location.trim()) return prev;
+          return { ...prev, location: parts.join(', ') };
+        });
+        setLocationStatus('detected');
+      } catch {
+        if (!isCancelled) setLocationStatus('failed');
+      }
+    };
+
+    autofillLocation();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   const updateField = <K extends keyof typeof form>(field: K, value: (typeof form)[K]) => {
     setSaved(false);
@@ -250,6 +288,11 @@ export const ProductivityModule: React.FC<Props> = ({
               placeholder="Where were you?"
               className="w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-black/30 px-3 py-2.5 outline-none"
             />
+            <span className="block text-[10px] text-zinc-500">
+              {locationStatus === 'loading' && 'Detecting from mobile IP...'}
+              {locationStatus === 'detected' && 'Auto-filled from your IP location'}
+              {locationStatus === 'failed' && 'Could not auto-detect location'}
+            </span>
           </label>
           <label className="space-y-1 text-sm">
             <span className="text-zinc-600 dark:text-zinc-400">Mood</span>
@@ -286,10 +329,12 @@ export const ProductivityModule: React.FC<Props> = ({
                 <p className="mb-2 font-medium text-zinc-700 dark:text-zinc-300">Monthly goals</p>
                 <div className="space-y-2">
                   {form.monthlyGoals.map((goal) => (
-                    <label key={goal.id} className="flex items-center gap-2">
-                      <input type="checkbox" checked={goal.completed} onChange={() => toggleGoal('monthlyGoals', goal.id)} />
-                      <span>{goal.text}</span>
-                    </label>
+                    <ClickToggleItem
+                      key={goal.id}
+                      label={goal.text}
+                      checked={goal.completed}
+                      onToggle={() => toggleGoal('monthlyGoals', goal.id)}
+                    />
                   ))}
                 </div>
               </div>
@@ -297,10 +342,12 @@ export const ProductivityModule: React.FC<Props> = ({
                 <p className="mb-2 font-medium text-zinc-700 dark:text-zinc-300">Daily goals</p>
                 <div className="space-y-2">
                   {form.dailyGoals.map((goal) => (
-                    <label key={goal.id} className="flex items-center gap-2">
-                      <input type="checkbox" checked={goal.completed} onChange={() => toggleGoal('dailyGoals', goal.id)} />
-                      <span>{goal.text}</span>
-                    </label>
+                    <ClickToggleItem
+                      key={goal.id}
+                      label={goal.text}
+                      checked={goal.completed}
+                      onToggle={() => toggleGoal('dailyGoals', goal.id)}
+                    />
                   ))}
                 </div>
               </div>

@@ -38,6 +38,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
   const [clickedBlock, setClickedBlock] = useState<ScheduleBlock | null>(null);
   const [allSubjects, setAllSubjects] = useState(getCustomSubjects());
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
+  const [showCompletedBlocks, setShowCompletedBlocks] = useState(false);
   const dayOfWeek = useMemo(() => {
     const [y, m, d] = log.date.split('-').map(Number);
     return new Date(y, m - 1, d).getDay();
@@ -284,6 +285,23 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
     () => [...visibleSchedule].sort((a, b) => a.startTime.localeCompare(b.startTime)),
     [visibleSchedule]
   );
+  const completedBlockCount = useMemo(
+    () => timelineSchedule.filter((block) => block.isCompleted).length,
+    [timelineSchedule]
+  );
+  const shouldCollapseCompleted = completedBlockCount > 1 && !editMode;
+  const displayedTimelineSchedule = useMemo(
+    () => shouldCollapseCompleted && !showCompletedBlocks
+      ? timelineSchedule.filter((block) => !block.isCompleted)
+      : timelineSchedule,
+    [timelineSchedule, shouldCollapseCompleted, showCompletedBlocks]
+  );
+
+  useEffect(() => {
+    if (!shouldCollapseCompleted) {
+      setShowCompletedBlocks(false);
+    }
+  }, [shouldCollapseCompleted]);
 
   const streakRisk = useMemo(() => {
     const now = toMinutes(currentTime);
@@ -512,23 +530,6 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
         </div>
       )}
 
-      {activeFocusBlock && !activeFocusBlock.isCompleted && (
-        <button
-          onClick={(e) => handleQuickFocus(e, getRealActivityName(activeFocusBlock.activityName), activeFocusBlock.endTime)}
-          className="w-full mb-6 p-4 rounded-2xl border border-primary-500/30 bg-gradient-to-r from-primary-500/15 to-white dark:to-primary-500/5 hover:from-primary-500/25 dark:hover:from-primary-500/30 hover:to-primary-500/10 transition-all shadow-lg shadow-primary-900/20 flex items-center justify-between"
-        >
-          <div className="text-left">
-            <p className="text-[10px] uppercase tracking-widest font-bold text-primary-600 dark:text-primary-300">Quick Start</p>
-            <p className="text-sm font-bold text-zinc-900 dark:text-white">Launch focus for {getRealActivityName(activeFocusBlock.activityName)}</p>
-            <p className="text-[10px] text-zinc-600 dark:text-zinc-400">Ends at {formatTimeByPreference(activeFocusBlock.endTime, timeFormat)}</p>
-          </div>
-          <div className="flex items-center gap-2 text-primary-600 dark:text-primary-200">
-            <Play size={16} className="fill-current" />
-            <ChevronRight size={14} />
-          </div>
-        </button>
-      )}
-
       {currentFreeWindow && (
         <div className="mb-6 p-5 rounded-3xl border border-emerald-500/25 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-950/35 dark:to-zinc-950 shadow-lg animate-in zoom-in-95 duration-500">
           <div className="flex items-start justify-between gap-4 mb-4">
@@ -647,8 +648,18 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
         </button>
       </div>
 
+      {shouldCollapseCompleted && (
+        <button
+          onClick={() => { haptic.light(); setShowCompletedBlocks((prev) => !prev); }}
+          className="w-full mb-4 flex items-center justify-between rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 px-4 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300 shadow-sm"
+        >
+          <span>{showCompletedBlocks ? 'Hide completed tasks' : `Show completed tasks (${completedBlockCount})`}</span>
+          <ChevronRight size={14} className={`transition-transform ${showCompletedBlocks ? 'rotate-90' : ''}`} />
+        </button>
+      )}
+
       <div className="relative border-l-2 border-zinc-200 dark:border-zinc-900 ml-3 space-y-6">
-        {timelineSchedule.map((block, idx) => {
+        {displayedTimelineSchedule.map((block) => {
           const active = block.id === activeBlockId;
           const activityName = getRealActivityName(block.activityName);
           const progress = active ? getBlockProgress(block.startTime, block.endTime) : 0;
