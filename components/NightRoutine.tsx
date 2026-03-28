@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { DayLog } from '../types';
-import { saveLog, saveTomorrowObjective } from '../services/storageService';
+import { saveLog, saveTomorrowObjective, getAppSettings } from '../services/storageService';
 import { getMentorFeedback } from '../services/geminiService';
-import { getCurrentTime24, formatTo12h } from '../services/timeService';
+import { getCurrentTime24, formatTimeByPreference } from '../services/timeService';
 import { Battery, Smile, Clock, Moon, CheckCircle2, XCircle, Send, Dumbbell, Target, Sparkles, Map, Lock } from 'lucide-react';
 
 interface Props {
@@ -14,6 +14,7 @@ interface Props {
 export const NightRoutine: React.FC<Props> = React.memo(({ log, refreshLog }) => {
   const [loadingAI, setLoadingAI] = useState(false);
   const [isLocked, setIsLocked] = useState(true);
+  const timeFormat = getAppSettings().timeFormat || '12H';
 
   // Auto-set time on mount if empty
   useEffect(() => {
@@ -53,6 +54,43 @@ export const NightRoutine: React.FC<Props> = React.memo(({ log, refreshLog }) =>
     if (h >= 21) return true;
     if (h === 0 && m <= 30) return true;
     return false;
+  };
+
+  const getSleepProtocolStatus = () => {
+    if (!log.sleepTime) {
+      return {
+        label: 'Set Sleep Time',
+        hint: 'Target window: 22:30 to 00:30',
+        tone: 'text-zinc-500 bg-zinc-100 dark:bg-zinc-800/60',
+      };
+    }
+
+    const [h, m] = log.sleepTime.split(':').map(Number);
+    const adjustedMinutes = h >= 21 ? (h - 24) * 60 + m : h * 60 + m;
+    const targetMinutes = 30; // 00:30
+    const delta = adjustedMinutes - targetMinutes;
+
+    if (adjustedMinutes > targetMinutes) {
+      return {
+        label: `Late by ${delta}m`,
+        hint: 'Try winding down 30-45 minutes earlier tomorrow.',
+        tone: 'text-rose-500 bg-rose-500/10',
+      };
+    }
+
+    if (adjustedMinutes < -90) {
+      return {
+        label: `Early by ${Math.abs(delta)}m`,
+        hint: 'Excellent recovery window. Keep this rhythm.',
+        tone: 'text-indigo-500 bg-indigo-500/10',
+      };
+    }
+
+    return {
+      label: 'On Target',
+      hint: 'Great timing for consistent recovery.',
+      tone: 'text-emerald-500 bg-emerald-500/10',
+    };
   };
 
   const ritualsDone = (log.completedRituals || []).length >= 1; // At least one ritual
@@ -124,6 +162,16 @@ export const NightRoutine: React.FC<Props> = React.memo(({ log, refreshLog }) =>
       {/* 1. Sleep & Call Section */}
       <section className="space-y-4 mb-8">
         <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl flex flex-col gap-4">
+          {(() => {
+            const sleepStatus = getSleepProtocolStatus();
+            return (
+              <div className={`rounded-xl px-3 py-2 text-xs font-semibold ${sleepStatus.tone}`}>
+                <p>{sleepStatus.label}</p>
+                <p className="mt-1 text-[11px] opacity-80">{sleepStatus.hint}</p>
+              </div>
+            );
+          })()}
+
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300">
               <Clock size={18} />
@@ -150,6 +198,22 @@ export const NightRoutine: React.FC<Props> = React.memo(({ log, refreshLog }) =>
             >
               NOW
             </button>
+          </div>
+
+          <div className="grid grid-cols-4 gap-2">
+            {['22:30', '23:00', '23:30', '00:30'].map((preset) => (
+              <button
+                key={preset}
+                onClick={() => handleUpdate('sleepTime', preset)}
+                className={`rounded-lg py-1.5 text-xs font-semibold border transition-colors ${
+                  log.sleepTime === preset
+                    ? 'bg-primary-500/15 border-primary-500/40 text-primary-600 dark:text-primary-300'
+                    : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300'
+                }`}
+              >
+                {preset}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -329,7 +393,7 @@ export const NightRoutine: React.FC<Props> = React.memo(({ log, refreshLog }) =>
                 {log.schedule.map((b, i) => (
                   <div key={i} className="flex items-center gap-4 p-3 bg-zinc-100 dark:bg-black/40 border border-zinc-200 dark:border-zinc-800/50 rounded-xl">
                     <div className="text-[10px] font-mono text-zinc-500 dark:text-zinc-600 w-16 whitespace-nowrap">
-                      {formatTo12h(b.startTime)}
+                      {formatTimeByPreference(b.startTime, timeFormat)}
                     </div>
                     <div className="flex-1 text-sm font-medium text-zinc-700 dark:text-zinc-400 truncate">
                       {b.activityName}

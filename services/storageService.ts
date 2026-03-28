@@ -8,7 +8,30 @@ const STORAGE_KEY = 'youmeet_data_v5';
 const TEMPLATE_KEY = 'youmeet_template_v1';
 const SUBJECTS_KEY = 'youmeet_subjects_v1';
 const SETTINGS_KEY = 'youmeet_settings_v1';
+const CURRICULUM_PROGRESS_KEY = 'youmeet_curriculum_progress_v1';
 const LOG_SAVE_DEBOUNCE_MS = 250;
+
+export type CurriculumProgramId = 'pharmacy-year-2' | 'pharmacy-year-3' | 'class-11-science';
+
+export interface CurriculumProgramProgress {
+  readUnitIds: string[];
+  completedSubUnitIds: string[];
+  updatedAt: string | null;
+}
+
+export type CurriculumProgressMap = Record<CurriculumProgramId, CurriculumProgramProgress>;
+
+const DEFAULT_CURRICULUM_PROGRESS: CurriculumProgressMap = {
+  'pharmacy-year-2': { readUnitIds: [], completedSubUnitIds: [], updatedAt: null },
+  'pharmacy-year-3': { readUnitIds: [], completedSubUnitIds: [], updatedAt: null },
+  'class-11-science': { readUnitIds: [], completedSubUnitIds: [], updatedAt: null },
+};
+
+const createDefaultCurriculumProgress = (): CurriculumProgressMap => ({
+  'pharmacy-year-2': { ...DEFAULT_CURRICULUM_PROGRESS['pharmacy-year-2'], readUnitIds: [], completedSubUnitIds: [] },
+  'pharmacy-year-3': { ...DEFAULT_CURRICULUM_PROGRESS['pharmacy-year-3'], readUnitIds: [], completedSubUnitIds: [] },
+  'class-11-science': { ...DEFAULT_CURRICULUM_PROGRESS['class-11-science'], readUnitIds: [], completedSubUnitIds: [] },
+});
 
 let logCache: Record<string, DayLog> | null = null;
 let logSaveTimer: number | null = null;
@@ -173,6 +196,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   themeAccent: 'indigo',
   themeMode: 'zinc',
   dateSystem: 'ENGLISH',
+  timeFormat: '12H',
   enableSounds: true,
   defaultFocusMinutes: 60,
   appMode: 'Normal',
@@ -194,6 +218,7 @@ export const getAppSettings = (): AppSettings => {
     ...DEFAULT_SETTINGS,
     ...parsed,
     onboarded: parsed.onboarded ?? false,
+    timeFormat: parsed.timeFormat === '24H' ? '24H' : '12H',
     weeklyPlan: { ...DEFAULT_WEEKLY_PLAN, ...parsed.weeklyPlan },
     weeklyTargets: { ...DEFAULT_WEEKLY_TARGETS, ...(parsed.weeklyTargets || {}) },
   };
@@ -224,6 +249,42 @@ export const saveCustomSubjects = (subjects: Subject[]) => {
   localStorage.setItem(SUBJECTS_KEY, JSON.stringify(subjects));
 };
 
+export const getCurriculumProgress = (): CurriculumProgressMap => {
+  const stored = localStorage.getItem(CURRICULUM_PROGRESS_KEY);
+  if (!stored) return createDefaultCurriculumProgress();
+
+  try {
+    const parsed = JSON.parse(stored) as Partial<CurriculumProgressMap>;
+    const normalize = (programId: CurriculumProgramId): CurriculumProgramProgress => {
+      const entry = parsed?.[programId];
+      const readUnitIds = Array.isArray(entry?.readUnitIds)
+        ? Array.from(new Set(entry.readUnitIds.filter((id): id is string => typeof id === 'string')))
+        : [];
+      const completedSubUnitIds = Array.isArray(entry?.completedSubUnitIds)
+        ? Array.from(new Set(entry.completedSubUnitIds.filter((id): id is string => typeof id === 'string')))
+        : [];
+
+      return {
+        readUnitIds,
+        completedSubUnitIds,
+        updatedAt: typeof entry?.updatedAt === 'string' ? entry.updatedAt : null,
+      };
+    };
+
+    return {
+      'pharmacy-year-2': normalize('pharmacy-year-2'),
+      'pharmacy-year-3': normalize('pharmacy-year-3'),
+      'class-11-science': normalize('class-11-science'),
+    };
+  } catch {
+    return createDefaultCurriculumProgress();
+  }
+};
+
+export const saveCurriculumProgress = (progress: CurriculumProgressMap) => {
+  localStorage.setItem(CURRICULUM_PROGRESS_KEY, JSON.stringify(progress));
+};
+
 // --- DATA MANAGEMENT (Import/Export/Reset) ---
 
 export const getBackupPayload = () => {
@@ -232,6 +293,7 @@ export const getBackupPayload = () => {
     logs: getStoredLog(),
     template: getScheduleTemplate(),
     subjects: getCustomSubjects(),
+    curriculumProgress: getCurriculumProgress(),
     settings: getAppSettings(),
     version: 'v6'
   };
@@ -245,6 +307,7 @@ const applyBackupPayload = (data: any) => {
   }
   if (data.template) localStorage.setItem(TEMPLATE_KEY, JSON.stringify(data.template));
   if (data.subjects) localStorage.setItem(SUBJECTS_KEY, JSON.stringify(data.subjects));
+  if (data.curriculumProgress) localStorage.setItem(CURRICULUM_PROGRESS_KEY, JSON.stringify(data.curriculumProgress));
   if (data.settings) localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
 };
 
@@ -484,6 +547,7 @@ export const resetApp = () => {
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(TEMPLATE_KEY);
   localStorage.removeItem(SUBJECTS_KEY);
+  localStorage.removeItem(CURRICULUM_PROGRESS_KEY);
   localStorage.removeItem(SETTINGS_KEY);
   window.location.reload();
 };

@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { User, Moon, Monitor, Sun, Zap, Coffee, GraduationCap, CalendarDays } from 'lucide-react';
-import { AppSettings, AppMode } from '../../types';
+import { User, Moon, Monitor, Sun, Zap, Coffee, GraduationCap, CalendarDays, Clock3 } from 'lucide-react';
+import { AppSettings, AppMode, TimeFormat } from '../../types';
 import { haptic } from '../../services/hapticService';
 
 interface Props {
@@ -122,6 +122,31 @@ export const AppearanceTab: React.FC<Props> = ({ settings, handleSaveSettings })
                                 <p className="text-[10px] opacity-70 uppercase">{system.desc}</p>
                             </div>
                             <CalendarDays size={16} />
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="space-y-4">
+                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Time Format</h3>
+                <div className="grid grid-cols-2 gap-3">
+                    {[
+                        { id: '12H', label: '12 Hour', desc: '2:30 PM' },
+                        { id: '24H', label: '24 Hour', desc: '14:30' },
+                    ].map((format) => (
+                        <button
+                            key={format.id}
+                            onClick={() => { haptic.light(); handleSaveSettings({ ...settings, timeFormat: format.id as TimeFormat }); }}
+                            className={`flex items-center justify-between p-3 rounded-xl border transition-all active-scale
+                ${settings.timeFormat === format.id
+                                    ? 'bg-primary-500/10 border-primary-500 text-primary-600 dark:text-primary-400 font-bold'
+                                    : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
+                        >
+                            <div className="text-left">
+                                <p className="text-xs font-bold">{format.label}</p>
+                                <p className="text-[10px] opacity-70 uppercase">{format.desc}</p>
+                            </div>
+                            <Clock3 size={16} />
                         </button>
                     ))}
                 </div>

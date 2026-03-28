@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { getHistory, getCustomSubjects, getAppSettings } from '../services/storageService';
 import { Subject, AppSettings, DayLog } from '../types';
-import { BarChart3, AlertTriangle, CheckCircle, GraduationCap, Flag, Milestone, AlertOctagon, Sparkles, CalendarDays, Trophy, Play, Smartphone, CalendarClock } from 'lucide-react';
+import { BarChart3, AlertTriangle, GraduationCap, Flag, Milestone, AlertOctagon, CalendarDays, Trophy } from 'lucide-react';
 import { WeeklyReport } from './WeeklyReport';
 import { formatDateBySystem, formatDateTimeBySystem, getYearInfoBySystem } from '../services/dateDisplay';
 
@@ -76,100 +76,11 @@ export const StatsView: React.FC = React.memo(() => {
   // ... existing calculation ...
   const deepWorkTotal = last7Days.reduce((acc, curr) => acc + curr.deepWorkMinutes, 0);
   const totalViolations = last7Days.reduce((acc, curr) => acc + curr.phoneViolations, 0);
-  const weeklyGoalProgress = useMemo(() => {
-    const deepWorkHours = Number((deepWorkTotal / 60).toFixed(1));
-    const zeroViolationDays = last7Days.filter(d => d.phoneViolations === 0).length;
-    const ritualsDefined = (settings.rituals || []).length > 0;
-    const ritualCompletionDays = last7Days.filter(d => {
-      if (!ritualsDefined) return false;
-      const completed = new Set(d.completedRituals || []);
-      return (settings.rituals || []).every(r => completed.has(r));
-    }).length;
-
-    const target = settings.weeklyTargets;
-    const toPct = (value: number, max: number) => max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
-
-    return {
-      deepWorkHours,
-      zeroViolationDays,
-      ritualCompletionDays,
-      deepWorkPct: toPct(deepWorkHours, target.deepWorkHours),
-      zeroViolationPct: toPct(zeroViolationDays, target.zeroViolationDays),
-      ritualPct: toPct(ritualCompletionDays, target.ritualCompletionDays),
-    };
-  }, [deepWorkTotal, last7Days, settings.rituals, settings.weeklyTargets]);
-
   // Filter deadlines for future only
   const upcomingDeadlines = (settings.deadlines || [])
     .filter(d => new Date(d.date).getTime() > (new Date().getTime() - 86400000))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const aiInsight = useMemo(() => {
-    // ... keep existing aiInsight logic ...
-    if (history.length < 3) return {
-      message: "I'm still learning your patterns. Keep focusing to unlock deep insights.",
-      type: 'neutral'
-    };
-
-    const recent = history.slice(-3);
-    const avgMins = recent.reduce((acc, curr) => acc + curr.deepWorkMinutes, 0) / 3;
-    const avgViolations = recent.reduce((acc, curr) => acc + curr.phoneViolations, 0) / 3;
-
-    if (avgViolations > 2) return {
-      message: "Focus leak detected. You're negotiating with your devices. Try leaving your phone in another room for the next session.",
-      type: 'warning'
-    };
-
-    if (avgMins > 120) return {
-      message: "Elite performance. You've entered the top 1% of focus intensity. Remember to rest your eyes between sessions.",
-      type: 'success'
-    };
-
-    if (avgMins < 30 && subjectStats.coverage < 50) return {
-      message: "Shallow work threat. You're skimming the surface. Pick ONE subject tomorrow and commit to 60 minutes of depth.",
-      type: 'info'
-    };
-
-    return {
-      message: "Steady momentum. You're building the habit of depth. Try a 'River' soundscape for your next session to stay in flow.",
-      type: 'neutral'
-    };
-  }, [history, subjectStats.coverage]);
-
-  const recommendationActions = useMemo(() => {
-    const startFocus = () => {
-      window.dispatchEvent(new CustomEvent('navigate-focus', {
-        detail: { task: '60-Minute Deep Focus Sprint', durationMinutes: 60 }
-      }));
-    };
-    const phoneProtocol = () => {
-      window.dispatchEvent(new CustomEvent('navigate-focus', {
-        detail: { task: 'Phone Away Protocol Session', durationMinutes: 60 }
-      }));
-    };
-    const openTimetable = () => {
-      window.dispatchEvent(new CustomEvent('navigate-view', { detail: { view: 'TIMETABLE' } }));
-    };
-
-    if (aiInsight.type === 'warning') {
-      return [
-        { id: 'phone', label: 'Set Phone Away Protocol', onClick: phoneProtocol, icon: Smartphone },
-        { id: 'focus', label: 'Start 60m Focus Now', onClick: startFocus, icon: Play },
-      ];
-    }
-
-    if (aiInsight.type === 'info') {
-      return [
-        { id: 'focus', label: 'Start 60m Focus Now', onClick: startFocus, icon: Play },
-        { id: 'plan', label: 'Open Timetable', onClick: openTimetable, icon: CalendarClock },
-      ];
-    }
-
-    return [
-      { id: 'focus', label: 'Start 60m Focus Now', onClick: startFocus, icon: Play },
-      { id: 'phone', label: 'Set Phone Away Protocol', onClick: phoneProtocol, icon: Smartphone },
-    ];
-  }, [aiInsight.type]);
 
   const heatmapData = useMemo(() => {
     const intensityOpacity = (mins: number) => {
@@ -385,85 +296,6 @@ export const StatsView: React.FC = React.memo(() => {
           <p className="text-[10px] text-zinc-500 mt-1">Violations (7d)</p>
         </div>
 
-        <div className="col-span-2 bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 p-4 rounded-2xl">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
-              <CheckCircle size={16} />
-              <span className="text-xs font-bold uppercase tracking-wider">Focus Quality Score</span>
-            </div>
-            <span className="text-2xl font-mono font-bold text-zinc-900 dark:text-white">{sessionInsights.avgQuality}<span className="text-xs text-zinc-500 ml-1">/100</span></span>
-          </div>
-          <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
-            <div className="h-full bg-indigo-500 transition-all" style={{ width: `${sessionInsights.avgQuality}%` }}></div>
-          </div>
-          <p className="text-[10px] text-zinc-500 mt-2">Scored from session duration, violations, and daily focus completion.</p>
-        </div>
-      </div>
-
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
-        <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 mb-4 uppercase tracking-wider">Weekly Goal Tracking</h3>
-        <div className="space-y-4">
-          <div>
-            <div className="flex items-center justify-between text-xs mb-1">
-              <span className="font-semibold text-zinc-700 dark:text-zinc-300">Deep Work Hours</span>
-              <span className="font-mono text-zinc-600 dark:text-zinc-400">{weeklyGoalProgress.deepWorkHours} / {settings.weeklyTargets.deepWorkHours}h</span>
-            </div>
-            <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
-              <div className="h-full bg-primary-500 transition-all" style={{ width: `${weeklyGoalProgress.deepWorkPct}%` }}></div>
-            </div>
-          </div>
-          <div>
-            <div className="flex items-center justify-between text-xs mb-1">
-              <span className="font-semibold text-zinc-700 dark:text-zinc-300">Zero-Violation Days</span>
-              <span className="font-mono text-zinc-600 dark:text-zinc-400">{weeklyGoalProgress.zeroViolationDays} / {settings.weeklyTargets.zeroViolationDays}d</span>
-            </div>
-            <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
-              <div className="h-full bg-emerald-500 transition-all" style={{ width: `${weeklyGoalProgress.zeroViolationPct}%` }}></div>
-            </div>
-          </div>
-          <div>
-            <div className="flex items-center justify-between text-xs mb-1">
-              <span className="font-semibold text-zinc-700 dark:text-zinc-300">Ritual Completion Days</span>
-              <span className="font-mono text-zinc-600 dark:text-zinc-400">{weeklyGoalProgress.ritualCompletionDays} / {settings.weeklyTargets.ritualCompletionDays}d</span>
-            </div>
-            <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
-              <div className="h-full bg-amber-500 transition-all" style={{ width: `${weeklyGoalProgress.ritualPct}%` }}></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* AI Coach Insight */}
-      <div className={`p-5 rounded-[2rem] border animate-in slide-in-from-top-2 duration-700 shadow-sm
-        ${aiInsight.type === 'warning' ? 'bg-rose-500/10 border-rose-500/20 text-rose-700 dark:text-rose-300' :
-          aiInsight.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300' :
-            aiInsight.type === 'info' ? 'bg-blue-500/10 border-blue-500/20 text-blue-700 dark:text-blue-300' :
-              'bg-primary-500/10 border-primary-500/20 text-primary-700 dark:text-primary-300'}
-      `}>
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-8 h-8 rounded-full bg-white/60 dark:bg-black/40 flex items-center justify-center">
-            <Sparkles size={16} />
-          </div>
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em]">AI Mentor Insights</span>
-        </div>
-        <p className="text-sm font-medium leading-relaxed italic opacity-90">
-          "{aiInsight.message}"
-        </p>
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          {recommendationActions.map(action => {
-            const Icon = action.icon;
-            return (
-              <button
-                key={action.id}
-                onClick={action.onClick}
-                className="py-2.5 px-3 rounded-xl border border-current/25 bg-white/40 dark:bg-black/20 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 hover:bg-white/60 dark:hover:bg-black/35 transition-colors"
-              >
-                <Icon size={13} />
-                {action.label}
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       {/* Upcoming Deadlines Widget */}
@@ -496,8 +328,8 @@ export const StatsView: React.FC = React.memo(() => {
         </div>
       )}
 
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-2">
             <CalendarDays size={14} /> Focus Heatmap
           </h3>
@@ -517,7 +349,7 @@ export const StatsView: React.FC = React.memo(() => {
           </div>
         </div>
 
-        <div className="mb-3">
+        <div className="mb-2">
           <select title="Select Subject" value={selectedSubjectId} onChange={(e) => setSelectedSubjectId(e.target.value)} className="w-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-700 dark:text-zinc-200 font-semibold outline-none focus:border-primary-500">
             <option value="ALL">All Subjects</option>
             {subjects.map(s => (
@@ -526,7 +358,7 @@ export const StatsView: React.FC = React.memo(() => {
           </select>
         </div>
 
-        <div className="flex items-end justify-between mb-3">
+        <div className="flex items-end justify-between mb-2">
           {heatmapView === '90D' ? (
             <>
               <div>
@@ -558,20 +390,20 @@ export const StatsView: React.FC = React.memo(() => {
           <div className="w-full">
             {heatmapView === '90D' &&
               <div
-                className="grid gap-1 w-full"
+                className="grid gap-0.5 w-full"
                 style={{ gridTemplateColumns: `repeat(${heatmapData.weeks90.length}, minmax(0, 1fr))` }}
               >
                 {heatmapData.weeks90.map((week, weekIdx) => (
-                  <div key={`w90-${weekIdx}`} className="grid grid-rows-7 gap-1">
+                  <div key={`w90-${weekIdx}`} className="grid grid-rows-7 gap-0.5 h-24">
                     {Array.from({ length: 7 }).map((_, rowIdx) => {
                       const day = week[rowIdx];
-                      if (!day) return <div key={`w90-empty-${weekIdx}-${rowIdx}`} className="aspect-square rounded-[3px] bg-transparent" />;
+                      if (!day) return <div key={`w90-empty-${weekIdx}-${rowIdx}`} className="w-full h-full rounded-[2px] bg-transparent" />;
                       const opacity = heatmapData.getNinetyOpacity(day);
                       return (
                         <div
                           key={day.date}
                           title={`${formatDateBySystem(day.date, settings.dateSystem, { year: 'numeric', month: 'short', day: 'numeric' })} • ${selectedSubjectId === 'ALL' ? `${heatmapData.getSubjectCountForDay(day)} subjects` : `${heatmapData.getNinetyValue(day)} mins`}`}
-                          className={`aspect-square rounded-[3px] transition-colors ${heatmapData.getNinetyValue(day) === 0 ? 'bg-zinc-200 dark:bg-zinc-800' : ''}`}
+                          className={`w-full h-full rounded-[2px] transition-colors ${heatmapData.getNinetyValue(day) === 0 ? 'bg-zinc-200 dark:bg-zinc-800' : ''}`}
                           style={heatmapData.getNinetyValue(day) > 0 ? { backgroundColor: hexToRgba(accentHex, opacity) } : undefined}
                         />
                       );

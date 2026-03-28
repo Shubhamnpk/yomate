@@ -13,6 +13,7 @@ import { NightRoutine } from './components/NightRoutine';
 import { StatsView } from './components/StatsView';
 import { NotesView } from './components/NotesView';
 import { Onboarding } from './components/Onboarding';
+import { CurriculumTracker } from './components/CurriculumTracker';
 import { Moon, AlertTriangle, Terminal, X, RotateCcw, Move, Zap, Smartphone, CheckCircle2, Bell, Sparkles, UserCheck, Palette, Flame } from 'lucide-react';
 
 // Map of accent names to RGB values for Tailwind variable injection
@@ -287,7 +288,7 @@ const DebugConsole: React.FC<{
   );
 }
 
-const VIEW_ORDER: ViewState[] = ['TIMETABLE', 'NOTES', 'FOCUS', 'STATS', 'NIGHT'];
+const VIEW_ORDER: ViewState[] = ['TIMETABLE', 'NOTES', 'CURRICULUM', 'FOCUS', 'STATS', 'NIGHT'];
 
 const App: React.FC = () => {
   const [currentView, setView] = useState<ViewState>('TIMETABLE');
@@ -685,6 +686,7 @@ const App: React.FC = () => {
                 />
               )}
               {currentView === 'NOTES' && <NotesView log={dayLog} refreshLog={refreshLog} />}
+              {currentView === 'CURRICULUM' && <CurriculumTracker />}
               {currentView === 'FOCUS' && (
                 <DeepWork
                   log={dayLog}

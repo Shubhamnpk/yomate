@@ -81,6 +81,7 @@ export interface DayLog {
 
 export type AppMode = 'Normal' | 'Serious' | 'Exam';
 export type DateSystem = 'ENGLISH' | 'NEPALI';
+export type TimeFormat = '12H' | '24H';
 
 export interface WeeklyPlan {
   // 0 = Sunday, 1 = Monday, etc.
@@ -102,6 +103,7 @@ export interface AppSettings {
   themeAccent: 'indigo' | 'emerald' | 'rose' | 'violet' | 'orange';
   themeMode: 'zinc' | 'black' | 'light'; // zinc = original deep gray, black = OLED, light = clean white
   dateSystem: DateSystem;
+  timeFormat: TimeFormat;
   enableSounds: boolean;
   defaultFocusMinutes: number; // Workflow preference
   appMode: AppMode;
@@ -116,7 +118,7 @@ export interface AppSettings {
   onboarded: boolean;
 }
 
-export type ViewState = 'TIMETABLE' | 'PLAN' | 'FOCUS' | 'NOTES' | 'NIGHT' | 'STATS';
+export type ViewState = 'TIMETABLE' | 'PLAN' | 'FOCUS' | 'NOTES' | 'CURRICULUM' | 'NIGHT' | 'STATS';
 
 export interface PhoneCheckResult {
   location: 'desk' | 'room' | 'hand';

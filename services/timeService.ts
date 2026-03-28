@@ -8,6 +8,11 @@ export const formatTo12h = (time24: string): string => {
   return `${hours12}:${minutes.toString().padStart(2, '0')} ${period}`;
 };
 
+export const formatTimeByPreference = (time24: string, format: '12H' | '24H' = '12H'): string => {
+  if (!time24) return '';
+  return format === '24H' ? time24 : formatTo12h(time24);
+};
+
 // Check if current time is within a range
 export const isTimeInRange = (current: string, start: string, end: string): boolean => {
   if (end < start) {
