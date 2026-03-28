@@ -189,9 +189,20 @@ export const BlockActionModal: React.FC<Props> = ({ block, appMode, onComplete, 
             </button>
           </div>
 
-          <button onClick={() => { haptic.light(); onComplete(); }} className="w-full mt-6 py-3 text-xs text-zinc-500 font-bold uppercase tracking-widest active-dim">
-            Just mark as complete
-          </button>
+          <div className="mt-6 flex gap-3">
+            <button
+              onClick={() => { haptic.light(); onClose(); }}
+              className="flex-1 py-3 rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-medium active-scale"
+            >
+              Close
+            </button>
+            <button
+              onClick={() => { haptic.light(); onComplete(); }}
+              className="flex-1 py-3 rounded-2xl text-xs text-zinc-500 font-bold uppercase tracking-widest border border-zinc-200 dark:border-zinc-700 active-dim"
+            >
+              Mark Complete
+            </button>
+          </div>
       </Model>
     );
   }
