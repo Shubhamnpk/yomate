@@ -26,6 +26,8 @@ export const StrategyTab: React.FC<Props> = ({
     handleStrategySelect
 }) => {
     const [newRitual, setNewRitual] = useState('');
+    const [newMonthlyGoal, setNewMonthlyGoal] = useState('');
+    const [newDailyGoal, setNewDailyGoal] = useState('');
     const [activePlannerDay, setActivePlannerDay] = useState(new Date().getDay());
 
     // Horizon State (Now part of Strategy)
@@ -50,6 +52,23 @@ export const StrategyTab: React.FC<Props> = ({
         const updatedRituals = [...(settings.rituals || [])];
         updatedRituals.splice(index, 1);
         handleSaveSettings({ ...settings, rituals: updatedRituals });
+    };
+
+    const handleAddProductivityGoal = (type: 'monthly' | 'daily') => {
+        const raw = type === 'monthly' ? newMonthlyGoal : newDailyGoal;
+        if (!raw.trim()) return;
+        const key = type === 'monthly' ? 'productivityMonthlyGoals' : 'productivityDailyGoals';
+        const updated = [...settings[key], raw.trim()];
+        handleSaveSettings({ ...settings, [key]: updated });
+        if (type === 'monthly') setNewMonthlyGoal('');
+        else setNewDailyGoal('');
+    };
+
+    const handleDeleteProductivityGoal = (type: 'monthly' | 'daily', index: number) => {
+        const key = type === 'monthly' ? 'productivityMonthlyGoals' : 'productivityDailyGoals';
+        const updated = [...settings[key]];
+        updated.splice(index, 1);
+        handleSaveSettings({ ...settings, [key]: updated });
     };
 
     const handleWeeklyPlanChange = (dayIndex: number, slot: 'main1' | 'main2' | 'light', value: string) => {
@@ -269,6 +288,63 @@ export const StrategyTab: React.FC<Props> = ({
                         {(!settings.rituals || settings.rituals.length === 0) && (
                             <p className="text-xs text-zinc-500 text-center py-2">No daily rituals defined.</p>
                         )}
+                    </div>
+                </div>
+            </div>
+
+            <div className="space-y-4">
+                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                    <Flag size={12} /> Productivity Goals
+                </h3>
+                <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 space-y-5">
+                    <div>
+                        <p className="text-sm font-bold text-zinc-900 dark:text-white mb-3">Monthly Goals Template</p>
+                        <div className="flex gap-2 mb-3">
+                            <input
+                                value={newMonthlyGoal}
+                                onChange={(e) => setNewMonthlyGoal(e.target.value)}
+                                placeholder="Add monthly goal"
+                                className="flex-1 bg-white dark:bg-black text-sm p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 outline-none"
+                            />
+                            <button onClick={() => handleAddProductivityGoal('monthly')} className="bg-primary-600 text-white p-3 rounded-lg">
+                                <Plus size={16} />
+                            </button>
+                        </div>
+                        <div className="space-y-2">
+                            {settings.productivityMonthlyGoals.map((goal, index) => (
+                                <div key={`${goal}-${index}`} className="flex items-center justify-between p-3 bg-white dark:bg-black/40 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                    <span className="text-sm font-medium">{goal}</span>
+                                    <button onClick={() => handleDeleteProductivityGoal('monthly', index)} className="text-zinc-400 hover:text-rose-500">
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <p className="text-sm font-bold text-zinc-900 dark:text-white mb-3">Daily Goals Template</p>
+                        <div className="flex gap-2 mb-3">
+                            <input
+                                value={newDailyGoal}
+                                onChange={(e) => setNewDailyGoal(e.target.value)}
+                                placeholder="Add daily goal"
+                                className="flex-1 bg-white dark:bg-black text-sm p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 outline-none"
+                            />
+                            <button onClick={() => handleAddProductivityGoal('daily')} className="bg-primary-600 text-white p-3 rounded-lg">
+                                <Plus size={16} />
+                            </button>
+                        </div>
+                        <div className="space-y-2">
+                            {settings.productivityDailyGoals.map((goal, index) => (
+                                <div key={`${goal}-${index}`} className="flex items-center justify-between p-3 bg-white dark:bg-black/40 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                    <span className="text-sm font-medium">{goal}</span>
+                                    <button onClick={() => handleDeleteProductivityGoal('daily', index)} className="text-zinc-400 hover:text-rose-500">
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>

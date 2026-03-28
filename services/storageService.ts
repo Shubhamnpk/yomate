@@ -208,6 +208,18 @@ const DEFAULT_SETTINGS: AppSettings = {
   cloudSyncToken: '',
   deadlines: [],
   rituals: ['Exercise', 'Reading', 'Meditation'],
+  productivityMonthlyGoals: [
+    'One page of language practice',
+    'Push one hard thing fully',
+    'Do one fun activity',
+  ],
+  productivityDailyGoals: [
+    'Drink enough water',
+    'Sleep at least 5 hours',
+    'Go outside for a bit',
+    'Read 10 pages',
+    'Practice one skill',
+  ],
   onboarded: false,
 };
 

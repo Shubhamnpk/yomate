@@ -115,6 +115,8 @@ export interface AppSettings {
   cloudSyncToken?: string;
   deadlines: Deadline[]; // Horizon Feature
   rituals: string[]; // New: Habits
+  productivityMonthlyGoals: string[];
+  productivityDailyGoals: string[];
   onboarded: boolean;
 }
 
@@ -123,4 +125,15 @@ export type ViewState = 'TIMETABLE' | 'PLAN' | 'FOCUS' | 'NOTES' | 'CURRICULUM' 
 export interface PhoneCheckResult {
   location: 'desk' | 'room' | 'hand';
   timestamp: number;
+}
+
+export interface ProductivityEntry {
+  id: string;
+  date: string;
+  activities: string;
+  interests: string;
+  goalsScore: number;
+  learningScore: number;
+  prosConsScore: number;
+  totalScore: number;
 }
