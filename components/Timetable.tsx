@@ -11,6 +11,7 @@ import { BrainDump } from './BrainDump';
 import { getCustomSubjects } from '../services/storageService';
 import { Settings, Pencil, CheckCircle2, Circle, Play, ChevronRight, MessageSquareQuote, X, Moon, Sunrise, AlarmClock, StickyNote, Flag, AlertTriangle, Dumbbell, Zap, Flame } from 'lucide-react';
 import { haptic } from '../services/hapticService';
+import { getLatestProductivitySubmission, getProductivityStreakEndingAt } from '../services/productivityService';
 
 interface Props {
   log: DayLog;
@@ -28,6 +29,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [appMode, setAppMode] = useState<AppMode>('Normal');
   const [streak, setStreak] = useState(0);
+  const [productivityStreak, setProductivityStreak] = useState(0);
   const [userName, setUserName] = useState('Student');
   const [rituals, setRituals] = useState<string[]>([]);
   const [dateSystem, setDateSystem] = useState<DateSystem>('ENGLISH');
@@ -79,6 +81,8 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
     const settings = getAppSettings();
     setAppMode(settings.appMode);
     setStreak(getStreak());
+    const latestProductivity = getLatestProductivitySubmission();
+    setProductivityStreak(latestProductivity ? getProductivityStreakEndingAt(latestProductivity.date) : 0);
     setUserName(settings.userName || 'Student');
     setRituals(settings.rituals || []);
     setDateSystem(settings.dateSystem || 'ENGLISH');
@@ -290,12 +294,6 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
     [timelineSchedule]
   );
   const shouldCollapseCompleted = completedBlockCount > 1 && !editMode;
-  const displayedTimelineSchedule = useMemo(
-    () => shouldCollapseCompleted && !showCompletedBlocks
-      ? timelineSchedule.filter((block) => !block.isCompleted)
-      : timelineSchedule,
-    [timelineSchedule, shouldCollapseCompleted, showCompletedBlocks]
-  );
 
   useEffect(() => {
     if (!shouldCollapseCompleted) {
@@ -403,10 +401,10 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
             <span className="text-zinc-700 dark:text-zinc-600">•</span>
             <p className="text-primary-500 text-xs font-bold uppercase tracking-wide">{appMode} Mode</p>
           </div>
-          <div className={`inline-flex mt-2 items-center gap-1.5 px-2.5 py-0.5 rounded-full animate-in zoom-in ${streak > 0 ? 'bg-orange-500/10 border border-orange-500/20' : 'bg-zinc-200/70 dark:bg-zinc-800/70 border border-zinc-300 dark:border-zinc-700'}`}>
-            <Flame size={12} className={streak > 0 ? 'text-orange-500 fill-orange-500 animate-pulse' : 'text-zinc-500 dark:text-zinc-400'} />
-            <span className={`text-[10px] font-bold font-mono ${streak > 0 ? 'text-orange-500' : 'text-zinc-500 dark:text-zinc-400'}`}>
-              {streak} day{streak === 1 ? '' : 's'} streak
+          <div className={`inline-flex mt-2 items-center gap-1.5 px-2.5 py-0.5 rounded-full animate-in zoom-in ${productivityStreak > 0 ? 'bg-orange-500/10 border border-orange-500/20' : 'bg-zinc-200/70 dark:bg-zinc-800/70 border border-zinc-300 dark:border-zinc-700'}`}>
+            <Flame size={12} className={productivityStreak > 0 ? 'text-orange-500 fill-orange-500 animate-pulse' : 'text-zinc-500 dark:text-zinc-400'} />
+            <span className={`text-[10px] font-bold font-mono ${productivityStreak > 0 ? 'text-orange-500' : 'text-zinc-500 dark:text-zinc-400'}`}>
+              {productivityStreak} days{productivityStreak === 1 ? '' : 's'} streak
             </span>
           </div>
         </div>
@@ -659,13 +657,14 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
       )}
 
       <div className="relative border-l-2 border-zinc-200 dark:border-zinc-900 ml-3 space-y-6">
-        {displayedTimelineSchedule.map((block) => {
+        {timelineSchedule.map((block) => {
           const active = block.id === activeBlockId;
           const activityName = getRealActivityName(block.activityName);
           const progress = active ? getBlockProgress(block.startTime, block.endTime) : 0;
           const minsLeft = active ? getTimeRemaining(block.endTime) : 0;
           const isFocusable = (block.mode === 'Study' || block.mode === 'Deep Work') && active;
           const isMinimizedCompleted = block.isCompleted && !editMode && !active;
+          const shouldAnimateHidden = shouldCollapseCompleted && !showCompletedBlocks && block.isCompleted && !active;
 
           // If Sleep Phase, dim everything
           const isDimmed = !active && isSleep;
@@ -673,11 +672,15 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
           return (
             <React.Fragment key={block.id}>
               <div
-                className={`relative pl-8 group ${isDimmed ? 'opacity-50 grayscale hover:opacity-100 hover:grayscale-0 transition-opacity' : ''}`}
+                className={`relative pl-8 group transition-all duration-500 ease-out ${
+                  shouldAnimateHidden ? 'max-h-0 overflow-hidden opacity-0 -translate-y-3 pointer-events-none mb-[-24px]' : 'max-h-[280px] opacity-100 translate-y-0'
+                } ${isDimmed ? 'opacity-50 grayscale hover:opacity-100 hover:grayscale-0 transition-opacity' : ''}`}
                 ref={active ? activeBlockRef : null}
               >
                 <div
-                  className={`absolute -left-[9px] ${isMinimizedCompleted ? 'top-4' : 'top-6'} w-4 h-4 rounded-full border-4 transition-all duration-500 z-10
+                  className={`absolute -left-[9px] ${isMinimizedCompleted ? 'top-4' : 'top-6'} w-4 h-4 rounded-full border-4 transition-all duration-500 z-10 ${
+                    shouldAnimateHidden ? 'opacity-0 scale-75' : 'opacity-100'
+                  }
                 ${active
                     ? 'bg-primary-500 border-white dark:border-zinc-950 shadow-[0_0_15px_rgb(var(--primary))] scale-110'
                     : block.isCompleted

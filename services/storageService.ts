@@ -2,6 +2,7 @@
 import { DayLog, ScheduleBlock, Subject, AppSettings, WeeklyPlan, Deadline } from '../types';
 import { DEFAULT_SCHEDULE, ALL_SUBJECTS } from '../constants';
 import { addMinutes, getCurrentTime24, getMinutesDiff } from './timeService';
+import { getProductivityEntries, getProductivityStreakEndingAt, PRODUCTIVITY_STORAGE_KEY } from './productivityService';
 
 // Bumped to v5 for new Settings features
 const STORAGE_KEY = 'youmeet_data_v5';
@@ -145,6 +146,7 @@ const evaluateAchievements = (logs: Record<string, DayLog>, date: string, settin
 
   if (log.deepWorkMinutes >= 100) unlocked.add('FIRST_100_MIN_DAY');
   if (calculateStreakEndingAt(logs, date) >= 7) unlocked.add('STREAK_7');
+  if (getProductivityStreakEndingAt(date) >= 7) unlocked.add('PRODUCTIVITY_STREAK_7');
 
   const noPhone3 = [0, 1, 2].every(offset => {
     const dStr = getDateDaysAgo(date, offset);
@@ -307,20 +309,43 @@ export const getBackupPayload = () => {
     subjects: getCustomSubjects(),
     curriculumProgress: getCurriculumProgress(),
     settings: getAppSettings(),
+    productivityEntries: getProductivityEntries(),
     version: 'v6'
   };
 };
 
-const applyBackupPayload = (data: any) => {
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const validateBackupPayload = (data: unknown) => {
+  if (!isRecord(data)) {
+    throw new Error('Backup file must contain an object payload.');
+  }
+  if ('logs' in data && !isRecord(data.logs)) {
+    throw new Error('Backup logs are invalid.');
+  }
+  if ('template' in data && !Array.isArray(data.template)) {
+    throw new Error('Backup schedule template is invalid.');
+  }
+  if ('subjects' in data && !Array.isArray(data.subjects)) {
+    throw new Error('Backup subjects are invalid.');
+  }
+  if ('productivityEntries' in data && !Array.isArray(data.productivityEntries)) {
+    throw new Error('Backup productivity history is invalid.');
+  }
+  return data;
+};
+
+const applyBackupPayload = (data: Record<string, unknown>) => {
   invalidateLogCache();
   if (data.logs) {
-    logCache = data.logs;
+    logCache = data.logs as Record<string, DayLog>;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data.logs));
   }
   if (data.template) localStorage.setItem(TEMPLATE_KEY, JSON.stringify(data.template));
   if (data.subjects) localStorage.setItem(SUBJECTS_KEY, JSON.stringify(data.subjects));
   if (data.curriculumProgress) localStorage.setItem(CURRICULUM_PROGRESS_KEY, JSON.stringify(data.curriculumProgress));
   if (data.settings) localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
+  if (data.productivityEntries) localStorage.setItem(PRODUCTIVITY_STORAGE_KEY, JSON.stringify(data.productivityEntries));
 };
 
 export const exportData = () => {
@@ -336,11 +361,12 @@ export const exportData = () => {
 
 export const importData = (jsonString: string) => {
   try {
-    const data = JSON.parse(jsonString);
+    const data = validateBackupPayload(JSON.parse(jsonString));
     applyBackupPayload(data);
     window.location.reload();
   } catch (e) {
-    alert("Invalid backup file.");
+    const message = e instanceof Error ? e.message : 'Invalid backup file.';
+    alert(message);
   }
 };
 
@@ -561,6 +587,7 @@ export const resetApp = () => {
   localStorage.removeItem(SUBJECTS_KEY);
   localStorage.removeItem(CURRICULUM_PROGRESS_KEY);
   localStorage.removeItem(SETTINGS_KEY);
+  localStorage.removeItem(PRODUCTIVITY_STORAGE_KEY);
   window.location.reload();
 };
 

@@ -129,12 +129,32 @@ export interface PhoneCheckResult {
 }
 
 export interface ProductivityEntry {
+  schemaVersion?: number;
+  scoringVersion?: number;
   id: string;
   date: string;
-  activities: string;
-  interests: string;
+  time: string;
+  createdAt: string;
+  updatedAt?: string;
+  mainFocus: string;
+  activities?: string;
+  location: string;
+  mood: string;
+  learnings: string;
+  interests?: string;
+  pros: string[];
+  cons: string[];
+  gratitude: string[];
+  finalThoughts: string;
+  monthlyGoals: Array<{ id: string; text: string; completed: boolean }>;
+  dailyGoals: Array<{ id: string; text: string; completed: boolean }>;
+  goalCompletionPercent: number;
+  completedGoals: number;
+  totalGoals: number;
   goalsScore: number;
   learningScore: number;
   prosConsScore: number;
+  gratitudeScore: number;
   totalScore: number;
+  overrideUsed?: boolean;
 }

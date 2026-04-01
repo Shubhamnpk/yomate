@@ -5,7 +5,7 @@ import { Subject, AppSettings, DayLog } from '../types';
 import { BarChart3, AlertTriangle, GraduationCap, Flag, Milestone, AlertOctagon, CalendarDays, Trophy } from 'lucide-react';
 import { WeeklyReport } from './WeeklyReport';
 import { formatDateBySystem, formatDateTimeBySystem, getYearInfoBySystem } from '../services/dateDisplay';
-import { getProductivityEntries } from '../hooks/useProductivity';
+import { getProductivityEntries } from '../services/productivityService';
 
 export const StatsView: React.FC = React.memo(() => {
   const ACCENT_HEX: Record<AppSettings['themeAccent'], string> = {
@@ -106,10 +106,19 @@ export const StatsView: React.FC = React.memo(() => {
       return 'Strong day';
     };
 
-    const getFocusFill = (minutes: number) => Math.max(0, Math.min(1, minutes / 180));
+    const getFocusFill = (minutes: number) => {
+      if (minutes <= 0) return 0.2;
+      if (minutes < 30) return 0.42;
+      if (minutes < 60) return 0.58;
+      if (minutes < 120) return 0.78;
+      return 1;
+    };
     const getFocusColor = (minutes: number) => {
-      const normalized = getFocusFill(minutes);
-      return `hsl(${200 - normalized * 65} 85% ${58 - normalized * 18}%)`;
+      if (minutes <= 0) return '#334155';
+      if (minutes < 30) return '#0f766e';
+      if (minutes < 60) return '#0891b2';
+      if (minutes < 120) return '#2563eb';
+      return '#4338ca';
     };
     const getFocusLabel = (minutes: number) => {
       if (minutes <= 0) return 'No focus';
@@ -118,10 +127,19 @@ export const StatsView: React.FC = React.memo(() => {
       return 'Deep focus day';
     };
 
-    const getSubjectFill = (count: number) => Math.max(0, Math.min(1, count / Math.max(subjects.length || 1, 4)));
+    const getSubjectFill = (count: number) => {
+      if (count <= 0) return 0.2;
+      if (count === 1) return 0.42;
+      if (count === 2) return 0.62;
+      if (count === 3) return 0.82;
+      return 1;
+    };
     const getSubjectColor = (count: number) => {
-      const normalized = getSubjectFill(count);
-      return `hsl(${260 - normalized * 110} 70% ${64 - normalized * 18}%)`;
+      if (count <= 0) return '#3f3f46';
+      if (count === 1) return '#b45309';
+      if (count === 2) return '#ea580c';
+      if (count === 3) return '#dc2626';
+      return '#be123c';
     };
     const getSubjectLabel = (count: number) => {
       if (count <= 0) return 'No subjects';
@@ -231,6 +249,7 @@ export const StatsView: React.FC = React.memo(() => {
   const achievementMeta: Record<string, string> = {
     FIRST_100_MIN_DAY: 'First 100 minutes in a day',
     STREAK_7: '7-day deep work streak',
+    PRODUCTIVITY_STREAK_7: '7-day productivity streak',
     NO_PHONE_3_DAYS: 'Zero phone violations for 3 days',
     RITUALS_WEEK: 'All rituals completed for 7 days',
   };
@@ -460,7 +479,7 @@ export const StatsView: React.FC = React.memo(() => {
                           key={day.date}
                           title={heatmapData.getTooltip(day.date, day.value, day.missed)}
                           className="w-full h-full rounded-[2px] transition-colors"
-                          style={{ backgroundColor: heatmapData.getColor(day.value), opacity: Math.max(0.22, heatmapData.getFill(day.value)) }}
+                          style={{ backgroundColor: heatmapData.getColor(day.value), opacity: Math.max(0.4, heatmapData.getFill(day.value)) }}
                         />
                       );
                     })}
@@ -487,7 +506,7 @@ export const StatsView: React.FC = React.memo(() => {
                               ? undefined
                               : {
                                   backgroundColor: heatmapData.getColor(day.value),
-                                  opacity: Math.max(0.22, heatmapData.getFill(day.value)),
+                                  opacity: Math.max(0.4, heatmapData.getFill(day.value)),
                                 }
                           }
                         />
@@ -512,7 +531,7 @@ export const StatsView: React.FC = React.memo(() => {
                 <div
                   key={value}
                   className="w-2.5 h-2.5 rounded-sm"
-                  style={{ backgroundColor: heatmapData.getColor(value), opacity: Math.max(0.22, heatmapData.getFill(value)) }}
+                  style={{ backgroundColor: heatmapData.getColor(value), opacity: Math.max(0.4, heatmapData.getFill(value)) }}
                 ></div>
               ))}
             </div>
@@ -531,7 +550,7 @@ export const StatsView: React.FC = React.memo(() => {
                 <div
                   key={value}
                   className="w-2.5 h-2.5 rounded-full"
-                  style={{ backgroundColor: heatmapData.getColor(value), opacity: Math.max(0.22, heatmapData.getFill(value)) }}
+                  style={{ backgroundColor: heatmapData.getColor(value), opacity: Math.max(0.4, heatmapData.getFill(value)) }}
                 ></div>
               ))}
             </div>

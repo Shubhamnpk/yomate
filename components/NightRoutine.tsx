@@ -194,6 +194,8 @@ export const NightRoutine: React.FC<Props> = React.memo(({ log, refreshLog }) =>
         initialDate={log.date}
         initialMainFocus={log.primaryObjective || ''}
         initialMood={log.mood}
+        initialCompletedRituals={log.completedRituals || []}
+        onCompletedRitualsChange={(completedRituals) => handleUpdate('completedRituals', completedRituals)}
       />
     </div>
   );
