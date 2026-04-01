@@ -102,6 +102,7 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
 
   const intervalRef = useRef<number | null>(null);
   const logRef = useRef(log);
+  const wakeLockRef = useRef<any>(null);
 
   // Refs to avoid stale closures in setInterval callbacks
   const focusModeRef = useRef(focusMode);
@@ -110,6 +111,30 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
   const totalTimeRef = useRef(totalTime);
   const sessionTaskRef = useRef(sessionTask);
   const sessionStartRef = useRef<{ startedAt: string; startingViolations: number } | null>(null);
+
+  const acquireWakeLock = async () => {
+    if (typeof window === 'undefined' || !('wakeLock' in navigator)) return;
+    if (wakeLockRef.current) return;
+    try {
+      wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+      wakeLockRef.current?.addEventListener?.('release', () => {
+        wakeLockRef.current = null;
+      });
+    } catch {
+      // Wake lock can fail (low battery, unsupported context, denied by browser).
+    }
+  };
+
+  const releaseWakeLock = async () => {
+    if (!wakeLockRef.current) return;
+    try {
+      await wakeLockRef.current.release();
+    } catch {
+      // Ignore release failures and always clear local ref.
+    } finally {
+      wakeLockRef.current = null;
+    }
+  };
 
   // Load defaults
   useEffect(() => {
@@ -155,8 +180,29 @@ export const DeepWork: React.FC<Props> = React.memo(({ log, refreshLog, initialT
     return () => {
       if (intervalRef.current) window.clearInterval(intervalRef.current);
       stopNoise(); // Stop audio on unmount
+      void releaseWakeLock();
     };
   }, []);
+
+  useEffect(() => {
+    if (timerState === 'RUNNING') {
+      void acquireWakeLock();
+      return;
+    }
+    void releaseWakeLock();
+  }, [timerState]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && timerState === 'RUNNING' && !wakeLockRef.current) {
+        void acquireWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [timerState]);
 
   useEffect(() => {
     const handleFocusToggle = () => {
