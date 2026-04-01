@@ -9,7 +9,7 @@ import { BlockActionModal } from './BlockActionModal';
 import { SettingsView } from './SettingsView';
 import { BrainDump } from './BrainDump';
 import { getCustomSubjects } from '../services/storageService';
-import { Settings, Pencil, CheckCircle2, Circle, Play, ChevronRight, MessageSquareQuote, X, Moon, Sunrise, AlarmClock, StickyNote, Flag, AlertTriangle, Dumbbell, Zap, Flame } from 'lucide-react';
+import { Settings, Pencil, CheckCircle2, Circle, Play, ChevronRight, MessageSquareQuote, X, Moon, Sunrise, AlarmClock, StickyNote, Flag, AlertTriangle, Dumbbell, Zap, Flame, CalendarRange, Lock } from 'lucide-react';
 import { haptic } from '../services/hapticService';
 import { getLatestProductivitySubmission, getProductivityStreakEndingAt } from '../services/productivityService';
 
@@ -49,19 +49,23 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
     () => log.schedule.filter(b => isBlockScheduledForDay(b, dayOfWeek, log.date)),
     [log.schedule, dayOfWeek, log.date]
   );
+  const timedVisibleSchedule = useMemo(
+    () => visibleSchedule.filter((block) => !block.isAllDay),
+    [visibleSchedule]
+  );
 
   // Refs for scrolling
   const activeBlockRef = useRef<HTMLDivElement | null>(null);
 
   // Detect Active Block ID
   useEffect(() => {
-    const active = visibleSchedule.find(b => isTimeInRange(currentTime, b.startTime, b.endTime));
+    const active = timedVisibleSchedule.find(b => isTimeInRange(currentTime, b.startTime, b.endTime));
     if (active && active.id !== activeBlockId) {
       setActiveBlockId(active.id);
     } else if (!active && activeBlockId) {
       setActiveBlockId(null);
     }
-  }, [currentTime, visibleSchedule, activeBlockId]);
+  }, [currentTime, timedVisibleSchedule, activeBlockId]);
 
   // STRICT AUTO-SCROLL to Center
   useEffect(() => {
@@ -130,7 +134,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
   const { nextBlock, isSleep, timeUntil } = useMemo(() => {
     if (activeBlockId) return { nextBlock: null, isSleep: false, timeUntil: '' };
 
-    const sorted = [...visibleSchedule].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const sorted = [...timedVisibleSchedule].sort((a, b) => a.startTime.localeCompare(b.startTime));
     if (sorted.length === 0) return { nextBlock: null, isSleep: false, timeUntil: '' };
 
     const nextIndex = sorted.findIndex(b => b.startTime > currentTime);
@@ -164,7 +168,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
 
     return { nextBlock: targetBlock, isSleep: isSleepPhase, timeUntil: timeString };
 
-  }, [visibleSchedule, currentTime, activeBlockId]);
+  }, [timedVisibleSchedule, currentTime, activeBlockId]);
 
   const handleBlockClick = (block: ScheduleBlock) => {
     if (editMode) {
@@ -277,8 +281,8 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
 
   const activeFocusBlock = useMemo(() => {
     if (!activeBlockId) return null;
-    return visibleSchedule.find(b => b.id === activeBlockId && (b.mode === 'Study' || b.mode === 'Deep Work')) || null;
-  }, [activeBlockId, visibleSchedule]);
+    return timedVisibleSchedule.find(b => b.id === activeBlockId && (b.mode === 'Study' || b.mode === 'Deep Work')) || null;
+  }, [activeBlockId, timedVisibleSchedule]);
 
   const toMinutes = (time: string) => {
     const [h, m] = time.split(':').map(Number);
@@ -286,7 +290,11 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
   };
 
   const timelineSchedule = useMemo(
-    () => [...visibleSchedule].sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    () => [...visibleSchedule].sort((a, b) => {
+      if (a.isAllDay && !b.isAllDay) return -1;
+      if (!a.isAllDay && b.isAllDay) return 1;
+      return a.startTime.localeCompare(b.startTime);
+    }),
     [visibleSchedule]
   );
   const completedBlockCount = useMemo(
@@ -656,13 +664,14 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
         </button>
       )}
 
-      <div className="relative border-l-2 border-zinc-200 dark:border-zinc-900 ml-3 space-y-6">
+      <div className="relative border-l-2 border-zinc-200 dark:border-zinc-900 ml-3">
         {timelineSchedule.map((block) => {
           const active = block.id === activeBlockId;
           const activityName = getRealActivityName(block.activityName);
+          const isCalendarEvent = block.blockType === 'EVENT' || block.mode === 'Class';
           const progress = active ? getBlockProgress(block.startTime, block.endTime) : 0;
           const minsLeft = active ? getTimeRemaining(block.endTime) : 0;
-          const isFocusable = (block.mode === 'Study' || block.mode === 'Deep Work') && active;
+          const isFocusable = !isCalendarEvent && (block.mode === 'Study' || block.mode === 'Deep Work') && active;
           const isMinimizedCompleted = block.isCompleted && !editMode && !active;
           const shouldAnimateHidden = shouldCollapseCompleted && !showCompletedBlocks && block.isCompleted && !active;
 
@@ -673,7 +682,7 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
             <React.Fragment key={block.id}>
               <div
                 className={`relative pl-8 group transition-all duration-500 ease-out ${
-                  shouldAnimateHidden ? 'max-h-0 overflow-hidden opacity-0 -translate-y-3 pointer-events-none mb-[-24px]' : 'max-h-[280px] opacity-100 translate-y-0'
+                  shouldAnimateHidden ? 'max-h-0 overflow-hidden opacity-0 -translate-y-3 pointer-events-none mb-0' : 'max-h-[280px] opacity-100 translate-y-0 mb-6 last:mb-0'
                 } ${isDimmed ? 'opacity-50 grayscale hover:opacity-100 hover:grayscale-0 transition-opacity' : ''}`}
                 ref={active ? activeBlockRef : null}
               >
@@ -695,7 +704,9 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
                     ? 'border-primary-500/30 bg-primary-500/5 hover:bg-primary-500/10'
                     : active
                       ? 'bg-gradient-to-br from-white to-zinc-50 dark:from-zinc-900 dark:to-zinc-950 border-primary-500/30 shadow-lg shadow-primary-900/10 scale-[1.02] ring-1 ring-primary-500/20'
-                      : block.isCompleted
+                      : isCalendarEvent
+                        ? 'bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-950/20 dark:to-zinc-950 border-indigo-200 dark:border-indigo-900/30 hover:border-indigo-300 dark:hover:border-indigo-800'
+                        : block.isCompleted
                         ? 'bg-zinc-100/70 dark:bg-zinc-900/30 border-zinc-200 dark:border-zinc-900 opacity-75 scale-[0.98]'
                         : 'bg-white dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800/50 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900/80'}
                 `}
@@ -731,22 +742,34 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
                       <div className="flex justify-between items-center mb-3">
                         <div className="flex items-center gap-2">
                           <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-1 rounded-md transition-colors
-                            ${block.mode === 'Deep Work' ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400' :
+                            ${isCalendarEvent ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-300' :
+                              block.mode === 'Deep Work' ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400' :
                               block.mode === 'Study' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
                                 block.mode === 'Task' ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400' :
                                 block.mode === 'Human' ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' :
                                   'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'}`}>
-                            {block.mode}
+                            {isCalendarEvent ? 'EVENT' : block.mode}
                           </span>
+                          {isCalendarEvent && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-300">
+                              <Lock size={10} />
+                              Fixed
+                            </span>
+                          )}
                           {active && (
                             <span className="text-[10px] font-mono text-primary-600 dark:text-primary-400 font-bold animate-pulse">
                               {minsLeft}m left
                             </span>
                           )}
+                          {block.isAllDay && (
+                            <span className="text-[10px] font-mono text-indigo-600 dark:text-indigo-300 font-bold">
+                              ALL DAY
+                            </span>
+                          )}
                         </div>
 
                         <span className="font-mono text-xs text-zinc-500">
-                          {formatTimeByPreference(block.startTime, timeFormat)} - {formatTimeByPreference(block.endTime, timeFormat)}
+                          {block.isAllDay ? 'All day' : `${formatTimeByPreference(block.startTime, timeFormat)} - ${formatTimeByPreference(block.endTime, timeFormat)}`}
                         </span>
                       </div>
 

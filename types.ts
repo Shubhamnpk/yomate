@@ -9,6 +9,7 @@ export interface ScheduleBlock {
   mode: ActivityMode;
   blockType?: 'TASK' | 'EVENT'; // EVENT = fixed event/class style block
   isFixed?: boolean; // User-configurable: fixed blocks are not auto-shifted
+  isAllDay?: boolean; // For imported calendar entries like holidays
   daysOfWeek?: number[]; // 0=Sun ... 6=Sat. Omitted means every day.
   eventDate?: string; // Optional start date (YYYY-MM-DD) for EVENT blocks
   eventEndDate?: string; // Optional end date (YYYY-MM-DD) for EVENT blocks

@@ -86,6 +86,7 @@ const normalizeScheduleBlock = (block: ScheduleBlock): ScheduleBlock => {
     ...block,
     blockType: block.blockType || (block.mode === 'Class' ? 'EVENT' : 'TASK'),
     isFixed: typeof block.isFixed === 'boolean' ? block.isFixed : inferDefaultFixed(block),
+    isAllDay: Boolean(block.isAllDay),
     daysOfWeek: normalizedDays,
     eventDate: normalizedDate,
     eventEndDate: normalizedEndDate,
@@ -534,8 +535,6 @@ export const importIcsCalendar = (icsText: string) => {
       }
     }
 
-    if (!dtStart.time) return;
-    const endTime = dtEnd?.time || addMinutes(dtStart.time, 60);
     const rrule = evt.RRULE?.value || '';
     const byDay = /BYDAY=([^;]+)/.exec(rrule)?.[1];
     const daysOfWeek = byDay
@@ -543,14 +542,18 @@ export const importIcsCalendar = (icsText: string) => {
       : undefined;
     const untilRaw = /UNTIL=([^;]+)/.exec(rrule)?.[1];
     const until = untilRaw ? parseIcsDateTime(untilRaw)?.date : undefined;
+    const isAllDay = !dtStart.time;
+    const startTime = dtStart.time || '00:00';
+    const endTime = dtEnd?.time || (isAllDay ? '23:59' : addMinutes(startTime, 60));
 
     const newBlock: ScheduleBlock = normalizeScheduleBlock({
       id: `ics_event_${Date.now()}_${idx}`,
-      startTime: dtStart.time,
+      startTime,
       endTime,
       activityName: summary,
       mode: 'Class',
       blockType: 'EVENT',
+      isAllDay,
       daysOfWeek: daysOfWeek && daysOfWeek.length > 0 ? daysOfWeek : undefined,
       eventDate: daysOfWeek && daysOfWeek.length > 0 ? dtStart.date : dtStart.date,
       eventEndDate: until,

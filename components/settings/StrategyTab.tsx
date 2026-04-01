@@ -1,6 +1,6 @@
 
 import React, { useRef, useState } from 'react';
-import { CheckCircle2, Plus, X, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Star, Clock, Flag, AlertOctagon, Milestone, Trash2, Upload } from 'lucide-react';
+import { CheckCircle2, Plus, X, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Star, Clock, Flag, AlertOctagon, Milestone, Trash2, Upload, CalendarRange } from 'lucide-react';
 import { AppSettings, Subject, DayLog, Deadline } from '../../types';
 import { haptic } from '../../services/hapticService';
 import { formatDateBySystem } from '../../services/dateDisplay';
@@ -44,6 +44,9 @@ export const StrategyTab: React.FC<Props> = ({
     const [newDeadlineDate, setNewDeadlineDate] = useState('');
     const [newDeadlineType, setNewDeadlineType] = useState<'Exam' | 'Assignment' | 'Project' | 'Other'>('Exam');
     const [icsImportNotice, setIcsImportNotice] = useState<string>('');
+    const [icsUrl, setIcsUrl] = useState('');
+    const [icsText, setIcsText] = useState('');
+    const [importingIcsUrl, setImportingIcsUrl] = useState(false);
     const icsFileRef = useRef<HTMLInputElement>(null);
 
     const handleAddRitual = () => {
@@ -179,6 +182,45 @@ export const StrategyTab: React.FC<Props> = ({
             }
         };
         reader.readAsText(file);
+        e.target.value = '';
+    };
+
+    const handleIcsUrlImport = async () => {
+        if (!icsUrl.trim()) return;
+        setImportingIcsUrl(true);
+        setIcsImportNotice('');
+        try {
+            const response = await fetch(icsUrl.trim(), {
+                method: 'GET',
+                headers: { Accept: 'text/calendar, text/plain, */*' },
+            });
+            if (!response.ok) {
+                throw new Error(`Calendar URL failed (${response.status})`);
+            }
+            const text = await response.text();
+            const result = importIcsCalendar(text);
+            handleSaveSettings(getAppSettings());
+            setIcsImportNotice(`Imported ${result.importedEvents} classes/events and ${result.importedDeadlines} deadlines from URL.`);
+            haptic.success();
+        } catch (err) {
+            setIcsImportNotice('URL import failed. The calendar may block direct browser access. Download the .ics file and use the upload button instead.');
+            haptic.error();
+        } finally {
+            setImportingIcsUrl(false);
+        }
+    };
+
+    const handleIcsTextImport = () => {
+        if (!icsText.trim()) return;
+        try {
+            const result = importIcsCalendar(icsText);
+            handleSaveSettings(getAppSettings());
+            setIcsImportNotice(`Imported ${result.importedEvents} classes/events and ${result.importedDeadlines} deadlines from pasted calendar text.`);
+            haptic.success();
+        } catch {
+            setIcsImportNotice('Pasted calendar text is not a valid ICS feed.');
+            haptic.error();
+        }
     };
 
     const toggleSection = (key: keyof typeof openSections) => {
@@ -204,23 +246,73 @@ export const StrategyTab: React.FC<Props> = ({
                         <span className="text-sm font-bold">Add Deadline</span>
                     </div>
 
-                    <div className="relative mb-3">
-                        <button
-                            className="w-full bg-indigo-600/10 border border-indigo-500/30 text-indigo-600 dark:text-indigo-300 rounded-lg py-2.5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 hover:bg-indigo-600/20 transition-colors"
-                        >
-                            <Upload size={14} /> Import Google/ICS Calendar
-                        </button>
-                        <input
-                            ref={icsFileRef}
-                            type="file"
-                            accept=".ics,text/calendar"
-                            onChange={handleIcsUpload}
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                        />
+                    <div className="mb-4 rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-950/20 dark:to-zinc-950 p-4">
+                        <div className="flex items-start gap-3">
+                            <div className="rounded-xl bg-indigo-500/10 p-2 text-indigo-600 dark:text-indigo-300">
+                                <CalendarRange size={16} />
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-sm font-bold text-zinc-900 dark:text-white">Calendar Import</p>
+                                <p className="text-[11px] text-zinc-500 mt-1">Import `.ics` files from Google Calendar, Apple Calendar, Outlook, or other calendar apps. Imported items appear on the timetable as fixed calendar events by date.</p>
+                            </div>
+                        </div>
+                        <div className="relative mt-4">
+                            <button
+                                className="w-full bg-indigo-600/10 border border-indigo-500/30 text-indigo-600 dark:text-indigo-300 rounded-xl py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 hover:bg-indigo-600/20 transition-colors"
+                            >
+                                <Upload size={14} /> Import Calendar (.ics)
+                            </button>
+                            <input
+                                ref={icsFileRef}
+                                type="file"
+                                accept=".ics,text/calendar"
+                                onChange={handleIcsUpload}
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                            />
+                        </div>
+                        <div className="mt-3 space-y-2">
+                            <input
+                                value={icsUrl}
+                                onChange={(e) => setIcsUrl(e.target.value)}
+                                placeholder="Or paste a public .ics URL"
+                                className="w-full bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-3 text-sm outline-none focus:border-indigo-500"
+                            />
+                            <button
+                                type="button"
+                                onClick={handleIcsUrlImport}
+                                disabled={!icsUrl.trim() || importingIcsUrl}
+                                className="w-full rounded-xl bg-indigo-600 text-white py-2.5 text-xs font-bold uppercase tracking-wider disabled:opacity-50 hover:bg-indigo-500 transition-colors"
+                            >
+                                {importingIcsUrl ? 'Importing URL...' : 'Import From URL'}
+                            </button>
+                        </div>
+                        <div className="mt-4 space-y-2">
+                            <textarea
+                                rows={6}
+                                value={icsText}
+                                onChange={(e) => setIcsText(e.target.value)}
+                                placeholder="If the URL is blocked, paste raw .ics text here"
+                                className="w-full bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-3 text-sm outline-none focus:border-indigo-500 resize-y"
+                            />
+                            <button
+                                type="button"
+                                onClick={handleIcsTextImport}
+                                disabled={!icsText.trim()}
+                                className="w-full rounded-xl border border-indigo-500/30 bg-indigo-600/10 text-indigo-600 dark:text-indigo-300 py-2.5 text-xs font-bold uppercase tracking-wider disabled:opacity-50 hover:bg-indigo-600/20 transition-colors"
+                            >
+                                Import Pasted Calendar Text
+                            </button>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                            <span className="rounded-full bg-white dark:bg-zinc-900 px-2.5 py-1 border border-zinc-200 dark:border-zinc-800">Google Calendar export</span>
+                            <span className="rounded-full bg-white dark:bg-zinc-900 px-2.5 py-1 border border-zinc-200 dark:border-zinc-800">Apple Calendar</span>
+                            <span className="rounded-full bg-white dark:bg-zinc-900 px-2.5 py-1 border border-zinc-200 dark:border-zinc-800">Outlook</span>
+                            <span className="rounded-full bg-white dark:bg-zinc-900 px-2.5 py-1 border border-zinc-200 dark:border-zinc-800">Other ICS apps</span>
+                        </div>
+                        {icsImportNotice && (
+                            <p className="text-[11px] text-indigo-600 dark:text-indigo-300 mt-3">{icsImportNotice}</p>
+                        )}
                     </div>
-                    {icsImportNotice && (
-                        <p className="text-[11px] text-indigo-600 dark:text-indigo-300 mb-3">{icsImportNotice}</p>
-                    )}
 
                     <div className="space-y-3">
                         <input
