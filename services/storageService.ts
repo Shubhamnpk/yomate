@@ -61,7 +61,7 @@ const invalidateLogCache = () => {
 };
 
 const inferDefaultFixed = (block: Pick<ScheduleBlock, 'blockType' | 'mode' | 'activityName'>): boolean => {
-  if (block.blockType === 'EVENT' || block.mode === 'Class' || block.mode === 'Rest') {
+  if (block.blockType === 'EVENT' || block.mode === 'Class' || block.mode === 'Event' || block.mode === 'Rest') {
     return true;
   }
   const name = (block.activityName || '').toLowerCase();
@@ -84,9 +84,12 @@ const normalizeScheduleBlock = (block: ScheduleBlock): ScheduleBlock => {
     : computedDuration;
   return {
     ...block,
-    blockType: block.blockType || (block.mode === 'Class' ? 'EVENT' : 'TASK'),
+    blockType: block.blockType || (block.mode === 'Class' || block.mode === 'Event' ? 'EVENT' : 'TASK'),
     isFixed: typeof block.isFixed === 'boolean' ? block.isFixed : inferDefaultFixed(block),
     isAllDay: Boolean(block.isAllDay),
+    eventKind: block.eventKind || 'GENERAL',
+    sourceCalendarName: typeof block.sourceCalendarName === 'string' ? block.sourceCalendarName : undefined,
+    sourceCalendarDescription: typeof block.sourceCalendarDescription === 'string' ? block.sourceCalendarDescription : undefined,
     daysOfWeek: normalizedDays,
     eventDate: normalizedDate,
     eventEndDate: normalizedEndDate,
@@ -253,6 +256,23 @@ export const getScheduleTemplate = (): ScheduleBlock[] => {
 
 export const saveScheduleTemplate = (schedule: ScheduleBlock[]) => {
   localStorage.setItem(TEMPLATE_KEY, JSON.stringify(schedule.map(normalizeScheduleBlock)));
+};
+
+export const getScheduleForDate = (date: string): ScheduleBlock[] => {
+  const logs = getStoredLog();
+  if (logs[date]?.schedule) {
+    return (logs[date].schedule || []).map(normalizeScheduleBlock).filter((block) => {
+      const [y, m, d] = date.split('-').map(Number);
+      const dayOfWeek = new Date(y, m - 1, d).getDay();
+      return isBlockScheduledForDay(block, dayOfWeek, date);
+    });
+  }
+
+  const [y, m, d] = date.split('-').map(Number);
+  const dayOfWeek = new Date(y, m - 1, d).getDay();
+  return getScheduleTemplate()
+    .filter((block) => isBlockScheduledForDay(block, dayOfWeek, date))
+    .map((block) => ({ ...block, isCompleted: false }));
 };
 
 export const getCustomSubjects = (): Subject[] => {
@@ -476,10 +496,44 @@ const parseIcsDateTime = (raw: string, isDateOnly = false) => {
   };
 };
 
+const inferImportedCalendarMode = (summary: string, description?: string): ScheduleBlock['mode'] => {
+  const text = `${summary} ${description || ''}`.toLowerCase();
+  if (/(class|college|lecture|lab|tutorial|practical|school|university|campus|semester|period|section)/.test(text)) {
+    return 'Study';
+  }
+  if (/(exam|test|quiz|viva|assessment)/.test(text)) {
+    return 'Study';
+  }
+  if (/(meeting|appointment|interview|visit|call)/.test(text)) {
+    return 'Human';
+  }
+  return 'Event';
+};
+
+const inferImportedEventKind = (
+  summary: string,
+  description: string,
+  calendarName?: string,
+  calendarDescription?: string,
+): NonNullable<ScheduleBlock['eventKind']> => {
+  const text = `${summary} ${description} ${calendarName || ''} ${calendarDescription || ''}`.toLowerCase();
+  if (/(holiday|observance|festival|public holiday|bank holiday|parwa|dashain|tihar|losar|jayanti)/.test(text)) {
+    return 'HOLIDAY';
+  }
+  if (/(class|college|lecture|lab|tutorial|practical|school|university|campus|semester|period|section|exam|test|quiz|viva|assessment)/.test(text)) {
+    return 'ACADEMIC';
+  }
+  if (/(meeting|appointment|interview|visit|call)/.test(text)) {
+    return 'MEETING';
+  }
+  return 'GENERAL';
+};
+
 export const importIcsCalendar = (icsText: string) => {
   const lines = unfoldIcsLines(icsText);
   const events: Array<Record<string, { value: string; params: Record<string, string> }>> = [];
   let current: Record<string, { value: string; params: Record<string, string> }> | null = null;
+  const calendarMeta: Record<string, string> = {};
 
   lines.forEach(line => {
     if (line === 'BEGIN:VEVENT') {
@@ -497,6 +551,14 @@ export const importIcsCalendar = (icsText: string) => {
     current[parsed.name] = { value: parsed.value, params: parsed.params };
   });
 
+  lines.forEach((line) => {
+    const parsed = parseIcsField(line);
+    if (!parsed) return;
+    if (parsed.name === 'X-WR-CALNAME' || parsed.name === 'X-WR-CALDESC') {
+      calendarMeta[parsed.name] = parsed.value;
+    }
+  });
+
   const existingTemplate = getScheduleTemplate();
   const existingSettings = getAppSettings();
   const existingDeadlines = [...(existingSettings.deadlines || [])];
@@ -508,6 +570,7 @@ export const importIcsCalendar = (icsText: string) => {
 
   events.forEach((evt, idx) => {
     const summary = (evt.SUMMARY?.value || 'Imported Event').trim();
+    const description = (evt.DESCRIPTION?.value || '').trim();
     const dtStartRaw = evt.DTSTART?.value;
     const dtEndRaw = evt.DTEND?.value;
     if (!dtStartRaw) return;
@@ -545,15 +608,20 @@ export const importIcsCalendar = (icsText: string) => {
     const isAllDay = !dtStart.time;
     const startTime = dtStart.time || '00:00';
     const endTime = dtEnd?.time || (isAllDay ? '23:59' : addMinutes(startTime, 60));
+    const inferredMode = inferImportedCalendarMode(summary, description);
+    const inferredKind = inferImportedEventKind(summary, description, calendarMeta['X-WR-CALNAME'], calendarMeta['X-WR-CALDESC']);
 
     const newBlock: ScheduleBlock = normalizeScheduleBlock({
       id: `ics_event_${Date.now()}_${idx}`,
       startTime,
       endTime,
       activityName: summary,
-      mode: 'Class',
+      mode: inferredMode,
       blockType: 'EVENT',
       isAllDay,
+      eventKind: inferredKind,
+      sourceCalendarName: calendarMeta['X-WR-CALNAME'],
+      sourceCalendarDescription: calendarMeta['X-WR-CALDESC'],
       daysOfWeek: daysOfWeek && daysOfWeek.length > 0 ? daysOfWeek : undefined,
       eventDate: daysOfWeek && daysOfWeek.length > 0 ? dtStart.date : dtStart.date,
       eventEndDate: until,

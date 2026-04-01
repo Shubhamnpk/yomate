@@ -24,7 +24,7 @@ const WEEK_DAYS = [
 
 export const EditBlockModal: React.FC<Props> = ({ block, onSave, onClose }) => {
   const inferFixed = (candidate: { blockType: 'TASK' | 'EVENT'; mode: ActivityMode; activityName: string }) => {
-    if (candidate.blockType === 'EVENT' || candidate.mode === 'Class' || candidate.mode === 'Rest') {
+    if (candidate.blockType === 'EVENT' || candidate.mode === 'Class' || candidate.mode === 'Event' || candidate.mode === 'Rest') {
       return true;
     }
     const name = (candidate.activityName || '').toLowerCase();
@@ -35,11 +35,11 @@ export const EditBlockModal: React.FC<Props> = ({ block, onSave, onClose }) => {
   const [endTime, setEndTime] = useState(block.endTime);
   const [activityName, setActivityName] = useState(block.activityName);
   const [mode, setMode] = useState<ActivityMode>(block.mode);
-  const [blockType, setBlockType] = useState<'TASK' | 'EVENT'>(block.blockType || (block.mode === 'Class' ? 'EVENT' : 'TASK'));
+  const [blockType, setBlockType] = useState<'TASK' | 'EVENT'>(block.blockType || (block.mode === 'Class' || block.mode === 'Event' ? 'EVENT' : 'TASK'));
   const [isFixed, setIsFixed] = useState<boolean>(
     typeof block.isFixed === 'boolean'
       ? block.isFixed
-      : inferFixed({ blockType: block.blockType || (block.mode === 'Class' ? 'EVENT' : 'TASK'), mode: block.mode, activityName: block.activityName })
+      : inferFixed({ blockType: block.blockType || (block.mode === 'Class' || block.mode === 'Event' ? 'EVENT' : 'TASK'), mode: block.mode, activityName: block.activityName })
   );
   const [fixedManuallyChanged, setFixedManuallyChanged] = useState(false);
   const [eventDate, setEventDate] = useState(block.eventDate || '');
@@ -178,7 +178,7 @@ export const EditBlockModal: React.FC<Props> = ({ block, onSave, onClose }) => {
         <div>
           <label className="text-[10px] font-bold text-zinc-500 uppercase mb-3 block tracking-widest">Category Mode</label>
           <div className="grid grid-cols-3 gap-2">
-            {(['Study', 'Deep Work', 'Task', 'Class', 'Rest', 'Human'] as ActivityMode[]).map((m) => (
+            {(['Study', 'Deep Work', 'Task', 'Class', 'Event', 'Rest', 'Human'] as ActivityMode[]).map((m) => (
               <button
                 key={m}
                 onClick={() => { haptic.light(); setMode(m); }}

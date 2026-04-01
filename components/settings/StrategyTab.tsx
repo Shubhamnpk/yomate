@@ -47,6 +47,7 @@ export const StrategyTab: React.FC<Props> = ({
     const [icsUrl, setIcsUrl] = useState('');
     const [icsText, setIcsText] = useState('');
     const [importingIcsUrl, setImportingIcsUrl] = useState(false);
+    const [showIcsFallback, setShowIcsFallback] = useState(false);
     const icsFileRef = useRef<HTMLInputElement>(null);
 
     const handleAddRitual = () => {
@@ -175,6 +176,7 @@ export const StrategyTab: React.FC<Props> = ({
                 const result = importIcsCalendar(text);
                 handleSaveSettings(getAppSettings());
                 setIcsImportNotice(`Imported ${result.importedEvents} classes/events and ${result.importedDeadlines} deadlines.`);
+                setShowIcsFallback(false);
                 haptic.success();
             } catch (err) {
                 setIcsImportNotice('Failed to import ICS. Please try a valid calendar export.');
@@ -201,9 +203,11 @@ export const StrategyTab: React.FC<Props> = ({
             const result = importIcsCalendar(text);
             handleSaveSettings(getAppSettings());
             setIcsImportNotice(`Imported ${result.importedEvents} classes/events and ${result.importedDeadlines} deadlines from URL.`);
+            setShowIcsFallback(false);
             haptic.success();
         } catch (err) {
-            setIcsImportNotice('URL import failed. The calendar may block direct browser access. Download the .ics file and use the upload button instead.');
+            setIcsImportNotice('URL import failed. The calendar may block direct browser access.');
+            setShowIcsFallback(true);
             haptic.error();
         } finally {
             setImportingIcsUrl(false);
@@ -216,6 +220,7 @@ export const StrategyTab: React.FC<Props> = ({
             const result = importIcsCalendar(icsText);
             handleSaveSettings(getAppSettings());
             setIcsImportNotice(`Imported ${result.importedEvents} classes/events and ${result.importedDeadlines} deadlines from pasted calendar text.`);
+            setShowIcsFallback(false);
             haptic.success();
         } catch {
             setIcsImportNotice('Pasted calendar text is not a valid ICS feed.');
@@ -286,23 +291,45 @@ export const StrategyTab: React.FC<Props> = ({
                                 {importingIcsUrl ? 'Importing URL...' : 'Import From URL'}
                             </button>
                         </div>
-                        <div className="mt-4 space-y-2">
-                            <textarea
-                                rows={6}
-                                value={icsText}
-                                onChange={(e) => setIcsText(e.target.value)}
-                                placeholder="If the URL is blocked, paste raw .ics text here"
-                                className="w-full bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-3 text-sm outline-none focus:border-indigo-500 resize-y"
-                            />
-                            <button
-                                type="button"
-                                onClick={handleIcsTextImport}
-                                disabled={!icsText.trim()}
-                                className="w-full rounded-xl border border-indigo-500/30 bg-indigo-600/10 text-indigo-600 dark:text-indigo-300 py-2.5 text-xs font-bold uppercase tracking-wider disabled:opacity-50 hover:bg-indigo-600/20 transition-colors"
-                            >
-                                Import Pasted Calendar Text
-                            </button>
-                        </div>
+                        {showIcsFallback && (
+                            <div className="mt-4 rounded-2xl border border-amber-200 dark:border-amber-900/30 bg-amber-50 dark:bg-amber-950/10 p-4 space-y-3">
+                                <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                                    Direct URL import is blocked. You can either open the calendar link to download the `.ics` file manually, or paste the raw calendar text below.
+                                </p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => window.open(icsUrl.trim(), '_blank', 'noopener,noreferrer')}
+                                        disabled={!icsUrl.trim()}
+                                        className="w-full rounded-xl border border-amber-300 dark:border-amber-800 bg-white dark:bg-zinc-900 py-2.5 text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300 disabled:opacity-50 hover:bg-amber-100 dark:hover:bg-amber-950/30 transition-colors"
+                                    >
+                                        Open Link To Download
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIcsText((prev) => prev)}
+                                        className="w-full rounded-xl border border-indigo-500/30 bg-indigo-600/10 text-indigo-600 dark:text-indigo-300 py-2.5 text-xs font-bold uppercase tracking-wider hover:bg-indigo-600/20 transition-colors"
+                                    >
+                                        Paste Calendar Text Below
+                                    </button>
+                                </div>
+                                <textarea
+                                    rows={6}
+                                    value={icsText}
+                                    onChange={(e) => setIcsText(e.target.value)}
+                                    placeholder="Paste raw .ics text here if the direct URL is blocked"
+                                    className="w-full bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-3 text-sm outline-none focus:border-indigo-500 resize-y"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleIcsTextImport}
+                                    disabled={!icsText.trim()}
+                                    className="w-full rounded-xl border border-indigo-500/30 bg-indigo-600/10 text-indigo-600 dark:text-indigo-300 py-2.5 text-xs font-bold uppercase tracking-wider disabled:opacity-50 hover:bg-indigo-600/20 transition-colors"
+                                >
+                                    Import Pasted Calendar Text
+                                </button>
+                            </div>
+                        )}
                         <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                             <span className="rounded-full bg-white dark:bg-zinc-900 px-2.5 py-1 border border-zinc-200 dark:border-zinc-800">Google Calendar export</span>
                             <span className="rounded-full bg-white dark:bg-zinc-900 px-2.5 py-1 border border-zinc-200 dark:border-zinc-800">Apple Calendar</span>

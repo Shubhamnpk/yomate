@@ -1,5 +1,5 @@
 
-export type ActivityMode = 'Study' | 'Deep Work' | 'Human' | 'Rest' | 'Class' | 'Task';
+export type ActivityMode = 'Study' | 'Deep Work' | 'Human' | 'Rest' | 'Class' | 'Task' | 'Event';
 
 export interface ScheduleBlock {
   id: string;
@@ -10,6 +10,9 @@ export interface ScheduleBlock {
   blockType?: 'TASK' | 'EVENT'; // EVENT = fixed event/class style block
   isFixed?: boolean; // User-configurable: fixed blocks are not auto-shifted
   isAllDay?: boolean; // For imported calendar entries like holidays
+  eventKind?: 'GENERAL' | 'HOLIDAY' | 'ACADEMIC' | 'MEETING';
+  sourceCalendarName?: string;
+  sourceCalendarDescription?: string;
   daysOfWeek?: number[]; // 0=Sun ... 6=Sat. Omitted means every day.
   eventDate?: string; // Optional start date (YYYY-MM-DD) for EVENT blocks
   eventEndDate?: string; // Optional end date (YYYY-MM-DD) for EVENT blocks

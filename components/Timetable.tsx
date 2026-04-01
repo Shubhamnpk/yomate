@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo, startTransition } from 'react';
 import { DayLog, ScheduleBlock, AppMode, DateSystem, TimeFormat } from '../types';
-import { updateScheduleStatus, updateScheduleBlock, splitBlockInSchedule, shiftScheduleForward, pullBlockToNow, getAppSettings, getYesterdayLog, saveLog, getStreak, isBlockScheduledForDay } from '../services/storageService';
+import { updateScheduleStatus, updateScheduleBlock, splitBlockInSchedule, shiftScheduleForward, pullBlockToNow, getAppSettings, getYesterdayLog, saveLog, getStreak, isBlockScheduledForDay, getScheduleForDate } from '../services/storageService';
 import { formatTimeByPreference, isTimeInRange, getMinutesDiff } from '../services/timeService';
 import { formatDateBySystem } from '../services/dateDisplay';
 import { SubjectManager } from './SubjectManager';
@@ -9,9 +9,10 @@ import { BlockActionModal } from './BlockActionModal';
 import { SettingsView } from './SettingsView';
 import { BrainDump } from './BrainDump';
 import { getCustomSubjects } from '../services/storageService';
-import { Settings, Pencil, CheckCircle2, Circle, Play, ChevronRight, MessageSquareQuote, X, Moon, Sunrise, AlarmClock, StickyNote, Flag, AlertTriangle, Dumbbell, Zap, Flame, CalendarRange, Lock } from 'lucide-react';
+import { Settings, Pencil, CheckCircle2, Circle, Play, ChevronRight, ChevronLeft, MessageSquareQuote, X, Moon, Sunrise, AlarmClock, StickyNote, Flag, AlertTriangle, Dumbbell, Zap, Flame, CalendarRange, Lock, CalendarDays } from 'lucide-react';
 import { haptic } from '../services/hapticService';
 import { getLatestProductivitySubmission, getProductivityStreakEndingAt } from '../services/productivityService';
+import NepaliDate from 'nepali-date-converter';
 
 interface Props {
   log: DayLog;
@@ -20,6 +21,18 @@ interface Props {
   onNavigateToFocus?: (taskName: string) => void;
   currentTime: string; // Lifted state
 }
+
+const parseLocalDate = (dateStr: string) => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day, 12, 0, 0);
+};
+
+const toLocalDateString = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refreshApp, currentTime }) => {
   const [showStrategy, setShowStrategy] = useState(false);
@@ -41,6 +54,11 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
   const [allSubjects, setAllSubjects] = useState(getCustomSubjects());
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
   const [showCompletedBlocks, setShowCompletedBlocks] = useState(false);
+  const [contentPanel, setContentPanel] = useState<'TIMELINE' | 'CALENDAR'>('TIMELINE');
+  const [calendarAnchorDate, setCalendarAnchorDate] = useState<Date>(() => parseLocalDate(log.date));
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(log.date);
+  const [showCalendarDayStats, setShowCalendarDayStats] = useState(false);
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const dayOfWeek = useMemo(() => {
     const [y, m, d] = log.date.split('-').map(Number);
     return new Date(y, m - 1, d).getDay();
@@ -53,6 +71,11 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
     () => visibleSchedule.filter((block) => !block.isAllDay),
     [visibleSchedule]
   );
+
+  useEffect(() => {
+    setSelectedCalendarDate(log.date);
+    setCalendarAnchorDate(parseLocalDate(log.date));
+  }, [log.date]);
 
   // Refs for scrolling
   const activeBlockRef = useRef<HTMLDivElement | null>(null);
@@ -297,6 +320,81 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
     }),
     [visibleSchedule]
   );
+  const selectedCalendarDateObject = useMemo(() => parseLocalDate(selectedCalendarDate), [selectedCalendarDate]);
+  const calendarMonthMeta = useMemo(() => {
+    if (dateSystem === 'NEPALI') {
+      const bs = new NepaliDate(calendarAnchorDate);
+      const year = bs.getYear();
+      const month = bs.getMonth();
+      const firstDate = new NepaliDate(year, month, 1).toJsDate();
+      const nextMonthDate = month === 11 ? new NepaliDate(year + 1, 0, 1).toJsDate() : new NepaliDate(year, month + 1, 1).toJsDate();
+      const endDate = new Date(nextMonthDate);
+      endDate.setDate(endDate.getDate() - 1);
+      const daysInMonth = new NepaliDate(endDate).getDate();
+      return {
+        key: `${year}-${month}`,
+        label: formatDateBySystem(firstDate, dateSystem, { month: 'long', year: 'numeric' }),
+        firstDate,
+        daysInMonth,
+        startWeekday: firstDate.getDay(),
+        prevMonthAnchor: month === 0 ? new NepaliDate(year - 1, 11, 1).toJsDate() : new NepaliDate(year, month - 1, 1).toJsDate(),
+        nextMonthAnchor: nextMonthDate,
+      };
+    }
+
+    const year = calendarAnchorDate.getFullYear();
+    const month = calendarAnchorDate.getMonth();
+    const firstDate = new Date(year, month, 1, 12, 0, 0);
+    return {
+      key: `${year}-${month}`,
+      label: formatDateBySystem(firstDate, dateSystem, { month: 'long', year: 'numeric' }),
+      firstDate,
+      daysInMonth: new Date(year, month + 1, 0).getDate(),
+      startWeekday: firstDate.getDay(),
+      prevMonthAnchor: new Date(year, month - 1, 1, 12, 0, 0),
+      nextMonthAnchor: new Date(year, month + 1, 1, 12, 0, 0),
+    };
+  }, [calendarAnchorDate, dateSystem]);
+  const calendarDays = useMemo(() => {
+    const cells: Array<{ key: string; date: string | null; currentMonth: boolean }> = [];
+    for (let i = 0; i < calendarMonthMeta.startWeekday; i++) {
+      cells.push({ key: `empty-start-${i}`, date: null, currentMonth: false });
+    }
+
+    for (let day = 1; day <= calendarMonthMeta.daysInMonth; day++) {
+      const jsDate = dateSystem === 'NEPALI'
+        ? new NepaliDate(new NepaliDate(calendarMonthMeta.firstDate).getYear(), new NepaliDate(calendarMonthMeta.firstDate).getMonth(), day).toJsDate()
+        : new Date(calendarMonthMeta.firstDate.getFullYear(), calendarMonthMeta.firstDate.getMonth(), day, 12, 0, 0);
+      const dateStr = toLocalDateString(jsDate);
+      cells.push({ key: dateStr, date: dateStr, currentMonth: true });
+    }
+
+    while (cells.length % 7 !== 0) {
+      cells.push({ key: `empty-end-${cells.length}`, date: null, currentMonth: false });
+    }
+
+    return cells;
+  }, [calendarMonthMeta, dateSystem]);
+  const calendarDayDetails = useMemo(() => {
+    const deadlines = getAppSettings().deadlines || [];
+    return new Map(calendarDays.filter((cell) => cell.date).map((cell) => {
+      const date = cell.date!;
+      const schedule = getScheduleForDate(date).sort((a, b) => {
+        if (a.isAllDay && !b.isAllDay) return -1;
+        if (!a.isAllDay && b.isAllDay) return 1;
+        return a.startTime.localeCompare(b.startTime);
+      });
+      const eventCount = schedule.filter((item) => item.blockType === 'EVENT').length;
+      const holidayCount = schedule.filter((item) => item.eventKind === 'HOLIDAY').length;
+      const taskCount = schedule.filter((item) => item.blockType !== 'EVENT').length;
+      const deadlineCount = deadlines.filter((deadline) => deadline.date === date).length;
+      return [date, { schedule, eventCount, holidayCount, taskCount, deadlineCount }];
+    }));
+  }, [calendarDays]);
+  const selectedCalendarDayDetails = useMemo(
+    () => calendarDayDetails.get(selectedCalendarDate) || { schedule: [], eventCount: 0, holidayCount: 0, taskCount: 0, deadlineCount: 0 },
+    [calendarDayDetails, selectedCalendarDate]
+  );
   const completedBlockCount = useMemo(
     () => timelineSchedule.filter((block) => block.isCompleted).length,
     [timelineSchedule]
@@ -354,6 +452,41 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
         durationMinutes: Math.max(10, Math.min(60, currentFreeWindow.gapMinutes)),
       }
     }));
+  };
+
+  const openCalendarPanel = () => {
+    haptic.light();
+    setContentPanel('CALENDAR');
+  };
+
+  const openTimelinePanel = () => {
+    haptic.light();
+    setContentPanel('TIMELINE');
+  };
+
+  const handleCalendarMonthStep = (direction: 'prev' | 'next') => {
+    haptic.light();
+    setCalendarAnchorDate(direction === 'prev' ? calendarMonthMeta.prevMonthAnchor : calendarMonthMeta.nextMonthAnchor);
+  };
+
+  const handleContentTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    const touch = e.touches[0];
+    swipeStartRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleContentTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!swipeStartRef.current) return;
+    const touch = e.changedTouches[0];
+    const deltaX = touch.clientX - swipeStartRef.current.x;
+    const deltaY = touch.clientY - swipeStartRef.current.y;
+    swipeStartRef.current = null;
+
+    if (Math.abs(deltaX) < 50 || Math.abs(deltaX) < Math.abs(deltaY)) return;
+    if (deltaX < 0 && contentPanel === 'TIMELINE') {
+      openCalendarPanel();
+    } else if (deltaX > 0 && contentPanel === 'CALENDAR') {
+      openTimelinePanel();
+    }
   };
 
   return (
@@ -654,21 +787,58 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
         </button>
       </div>
 
-      {shouldCollapseCompleted && (
+      <div className="flex items-center gap-2 mb-4">
         <button
-          onClick={() => { haptic.light(); setShowCompletedBlocks((prev) => !prev); }}
-          className="w-full mb-4 flex items-center justify-between rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 px-4 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300 shadow-sm"
+          onClick={openTimelinePanel}
+          className={`flex-1 rounded-2xl border px-4 py-3 text-xs font-bold uppercase tracking-widest transition-all ${contentPanel === 'TIMELINE' ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300'}`}
         >
-          <span>{showCompletedBlocks ? 'Hide completed tasks' : `Show completed tasks (${completedBlockCount})`}</span>
-          <ChevronRight size={14} className={`transition-transform ${showCompletedBlocks ? 'rotate-90' : ''}`} />
+          Timeline
         </button>
-      )}
+        <button
+          onClick={openCalendarPanel}
+          className={`flex-1 rounded-2xl border px-4 py-3 text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${contentPanel === 'CALENDAR' ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300'}`}
+        >
+          <CalendarDays size={14} />
+          Calendar
+        </button>
+      </div>
+      <div onTouchStart={handleContentTouchStart} onTouchEnd={handleContentTouchEnd}>
+        {contentPanel === 'TIMELINE' && (
+          <>
+            {shouldCollapseCompleted && (
+              <button
+                onClick={() => { haptic.light(); setShowCompletedBlocks((prev) => !prev); }}
+                className="w-full mb-4 flex items-center justify-between rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 px-4 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300 shadow-sm"
+              >
+                <span>{showCompletedBlocks ? 'Hide completed tasks' : `Show completed tasks (${completedBlockCount})`}</span>
+                <ChevronRight size={14} className={`transition-transform ${showCompletedBlocks ? 'rotate-90' : ''}`} />
+              </button>
+            )}
 
-      <div className="relative border-l-2 border-zinc-200 dark:border-zinc-900 ml-3">
-        {timelineSchedule.map((block) => {
+            <div className="relative border-l-2 border-zinc-200 dark:border-zinc-900 ml-3">
+              {timelineSchedule.map((block) => {
           const active = block.id === activeBlockId;
           const activityName = getRealActivityName(block.activityName);
-          const isCalendarEvent = block.blockType === 'EVENT' || block.mode === 'Class';
+          const isCalendarEvent = block.blockType === 'EVENT' || block.mode === 'Class' || block.mode === 'Event';
+          const isAcademicCalendarBlock = isCalendarEvent && (block.mode === 'Study' || block.mode === 'Class' || block.mode === 'Deep Work');
+          const modeBadgeClass = block.eventKind === 'HOLIDAY'
+            ? 'bg-amber-500/15 text-amber-800 dark:bg-amber-400/15 dark:text-amber-200'
+            : isCalendarEvent && !isAcademicCalendarBlock
+              ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-300'
+            : block.mode === 'Deep Work'
+              ? 'bg-sky-500/15 text-sky-800 dark:bg-cyan-400/15 dark:text-cyan-200'
+              : block.mode === 'Study' || block.mode === 'Class'
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                : block.mode === 'Task'
+                  ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400'
+                  : block.mode === 'Human'
+                    ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400';
+          const modeLabel = block.eventKind === 'HOLIDAY'
+            ? 'HOLIDAY'
+            : isCalendarEvent && !isAcademicCalendarBlock
+              ? 'EVENT'
+              : block.mode;
           const progress = active ? getBlockProgress(block.startTime, block.endTime) : 0;
           const minsLeft = active ? getTimeRemaining(block.endTime) : 0;
           const isFocusable = !isCalendarEvent && (block.mode === 'Study' || block.mode === 'Deep Work') && active;
@@ -741,14 +911,8 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
                     <>
                       <div className="flex justify-between items-center mb-3">
                         <div className="flex items-center gap-2">
-                          <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-1 rounded-md transition-colors
-                            ${isCalendarEvent ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-300' :
-                              block.mode === 'Deep Work' ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400' :
-                              block.mode === 'Study' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
-                                block.mode === 'Task' ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400' :
-                                block.mode === 'Human' ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' :
-                                  'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'}`}>
-                            {isCalendarEvent ? 'EVENT' : block.mode}
+                          <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-1 rounded-md transition-colors ${modeBadgeClass}`}>
+                            {modeLabel}
                           </span>
                           {isCalendarEvent && (
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-300">
@@ -807,7 +971,156 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
               </div>
             </React.Fragment>
           );
-        })}
+              })}
+            </div>
+          </>
+        )}
+
+        {contentPanel === 'CALENDAR' && (
+          <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
+            <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-5">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <button onClick={() => handleCalendarMonthStep('prev')} className="rounded-xl border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-zinc-600 dark:text-zinc-300">
+                  <ChevronLeft size={16} />
+                </button>
+                <div className="text-center min-w-0">
+                  <p className="text-[10px] uppercase tracking-widest text-zinc-500">Calendar</p>
+                  <h3 className="text-lg font-bold text-zinc-900 dark:text-white truncate">{calendarMonthMeta.label}</h3>
+                </div>
+                <button onClick={() => handleCalendarMonthStep('next')} className="rounded-xl border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-zinc-600 dark:text-zinc-300">
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-7 gap-2 text-center text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-3">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <div key={day}>{day}</div>)}
+              </div>
+
+              <div className="grid grid-cols-7 gap-2">
+                {calendarDays.map((cell) => {
+                  if (!cell.date) {
+                    return <div key={cell.key} className="aspect-square rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800 opacity-40" />;
+                  }
+
+                  const jsDate = parseLocalDate(cell.date);
+                  const isSelected = cell.date === selectedCalendarDate;
+                  const isToday = cell.date === log.date;
+                  const detail = calendarDayDetails.get(cell.date)!;
+                  const isHolidayDay = detail.holidayCount > 0;
+                  const dayLabel = dateSystem === 'NEPALI'
+                    ? String(new NepaliDate(jsDate).getDate())
+                    : String(jsDate.getDate());
+
+                  return (
+                    <button
+                      key={cell.key}
+                      onClick={() => { haptic.light(); setSelectedCalendarDate(cell.date!); }}
+                      className={`aspect-square rounded-2xl border p-2 text-left transition-all ${isSelected ? 'bg-primary-600 text-white border-primary-500 shadow-lg shadow-primary-500/20' : isHolidayDay ? 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/30 text-zinc-900 dark:text-rose-100 hover:border-rose-300 dark:hover:border-rose-800' : isToday ? 'bg-primary-500/10 border-primary-500/30 text-zinc-900 dark:text-white' : 'bg-white dark:bg-zinc-950/40 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700'}`}
+                    >
+                      <div className="flex h-full flex-col">
+                        <span className="text-sm font-bold">{dayLabel}</span>
+                        <div className="mt-auto flex flex-wrap gap-1">
+                          {detail.eventCount > 0 && <span className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-white' : detail.holidayCount > 0 ? 'bg-rose-500' : 'bg-indigo-500'}`} />}
+                          {detail.taskCount > 0 && <span className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-white/80' : 'bg-emerald-500'}`} />}
+                          {detail.deadlineCount > 0 && <span className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-amber-100' : 'bg-amber-500'}`} />}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-5">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest text-zinc-500">Selected day</p>
+                  <h3 className="text-lg font-bold text-zinc-900 dark:text-white">{formatDateBySystem(selectedCalendarDateObject, dateSystem, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</h3>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedCalendarDate(log.date);
+                    setCalendarAnchorDate(parseLocalDate(log.date));
+                    haptic.light();
+                  }}
+                  className="rounded-xl border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs font-bold uppercase tracking-widest text-zinc-600 dark:text-zinc-300"
+                >
+                  Today
+                </button>
+              </div>
+
+              <button
+                onClick={() => { haptic.light(); setShowCalendarDayStats((prev) => !prev); }}
+                className="mb-5 w-full flex items-center justify-between rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/30 px-4 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300"
+              >
+                <span>{showCalendarDayStats ? 'Hide day summary' : 'Show day summary'}</span>
+                <ChevronRight size={14} className={`transition-transform ${showCalendarDayStats ? 'rotate-90' : ''}`} />
+              </button>
+
+              {showCalendarDayStats && (
+                <div className="grid grid-cols-3 gap-3 mb-5 animate-in fade-in duration-200">
+                  <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-3">
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-500">Events</p>
+                    <p className="mt-1 text-xl font-bold text-zinc-900 dark:text-white">{selectedCalendarDayDetails.eventCount}</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-3">
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-500">Tasks</p>
+                    <p className="mt-1 text-xl font-bold text-zinc-900 dark:text-white">{selectedCalendarDayDetails.taskCount}</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-3">
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-500">Deadlines</p>
+                    <p className="mt-1 text-xl font-bold text-zinc-900 dark:text-white">{selectedCalendarDayDetails.deadlineCount}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {selectedCalendarDayDetails.schedule.length > 0 ? selectedCalendarDayDetails.schedule.map((item) => {
+                  const isEvent = item.blockType === 'EVENT';
+                  const isAcademicEvent = isEvent && (item.mode === 'Study' || item.mode === 'Class' || item.mode === 'Deep Work');
+                  const detailBadgeLabel = item.eventKind === 'HOLIDAY'
+                    ? 'Holiday'
+                    : isEvent && !isAcademicEvent
+                      ? 'Event'
+                      : item.mode;
+                  const detailBadgeClass = item.eventKind === 'HOLIDAY'
+                    ? 'bg-amber-500/15 text-amber-800 dark:bg-amber-400/15 dark:text-amber-200'
+                    : isEvent && !isAcademicEvent
+                      ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-300'
+                    : item.mode === 'Study' || item.mode === 'Class'
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+                      : item.mode === 'Deep Work'
+                        ? 'bg-sky-500/15 text-sky-800 dark:bg-cyan-400/15 dark:text-cyan-200'
+                        : item.mode === 'Human'
+                          ? 'bg-rose-500/10 text-rose-600 dark:text-rose-300'
+                          : 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-300';
+                  const detailCardClass = item.eventKind === 'HOLIDAY'
+                    ? 'border-rose-300 dark:border-rose-900/40 bg-rose-100/80 dark:bg-rose-950/20'
+                    : isEvent
+                      ? 'border-indigo-200 dark:border-indigo-900/30 bg-indigo-50/70 dark:bg-indigo-950/10'
+                      : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/30';
+                  return (
+                    <div key={`${selectedCalendarDate}-${item.id}`} className={`rounded-2xl border p-4 ${detailCardClass}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-zinc-900 dark:text-white truncate">{getRealActivityName(item.activityName)}</p>
+                          <p className="text-xs text-zinc-500 mt-1">{item.isAllDay ? 'All day' : `${formatTimeByPreference(item.startTime, timeFormat)} - ${formatTimeByPreference(item.endTime, timeFormat)}`}</p>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${detailBadgeClass}`}>
+                          {detailBadgeLabel}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }) : (
+                  <div className="rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-700 px-4 py-8 text-center text-sm text-zinc-500">
+                    No schedule blocks or imported events for this day.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

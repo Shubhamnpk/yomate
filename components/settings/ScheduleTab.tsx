@@ -9,7 +9,7 @@ interface Props {
 
 export const ScheduleTab: React.FC<Props> = ({ template, setEditingBlockId }) => {
     const inferFixed = (block: ScheduleBlock) => {
-        if (block.blockType === 'EVENT' || block.mode === 'Class' || block.mode === 'Rest') return true;
+        if (block.blockType === 'EVENT' || block.mode === 'Class' || block.mode === 'Event' || block.mode === 'Rest') return true;
         const name = (block.activityName || '').toLowerCase();
         return /breakfast|lunch|dinner|meal|rest|sleep|nap|break/.test(name);
     };
@@ -45,7 +45,7 @@ export const ScheduleTab: React.FC<Props> = ({ template, setEditingBlockId }) =>
                             {block.mode}
                         </div>
                         <div className="px-2 py-0.5 bg-primary-500/10 rounded text-[9px] font-bold text-primary-500 uppercase">
-                            {block.blockType || (block.mode === 'Class' ? 'EVENT' : 'TASK')}
+                            {block.blockType || (block.mode === 'Class' || block.mode === 'Event' ? 'EVENT' : 'TASK')}
                         </div>
                         <div className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${((typeof block.isFixed === 'boolean' ? block.isFixed : inferFixed(block))
                             ? 'bg-rose-500/10 text-rose-500'
