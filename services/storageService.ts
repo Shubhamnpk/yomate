@@ -188,9 +188,10 @@ const evaluateAchievements = (logs: Record<string, DayLog>, date: string, settin
 };
 
 export const getStoredLog = (): Record<string, DayLog> => {
-  if (logCache) return logCache;
+  if (logCache !== null) return logCache;
   const stored = localStorage.getItem(STORAGE_KEY);
-  logCache = stored ? JSON.parse(stored) : {};
+  const parsed = stored ? JSON.parse(stored) : {};
+  logCache = parsed && typeof parsed === 'object' ? (parsed as Record<string, DayLog>) : {};
   return logCache;
 };
 
