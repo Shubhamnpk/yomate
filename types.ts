@@ -1,5 +1,5 @@
 
-export type ActivityMode = 'Study' | 'Deep Work' | 'Human' | 'Rest' | 'Class';
+export type ActivityMode = 'Study' | 'Deep Work' | 'Human' | 'Rest' | 'Class' | 'Task' | 'Event';
 
 export interface ScheduleBlock {
   id: string;
@@ -7,13 +7,23 @@ export interface ScheduleBlock {
   endTime: string; // HH:mm
   activityName: string;
   mode: ActivityMode;
+  blockType?: 'TASK' | 'EVENT'; // EVENT = fixed event/class style block
+  isFixed?: boolean; // User-configurable: fixed blocks are not auto-shifted
+  isAllDay?: boolean; // For imported calendar entries like holidays
+  eventKind?: 'GENERAL' | 'HOLIDAY' | 'ACADEMIC' | 'MEETING';
+  sourceCalendarName?: string;
+  sourceCalendarDescription?: string;
+  daysOfWeek?: number[]; // 0=Sun ... 6=Sat. Omitted means every day.
+  eventDate?: string; // Optional start date (YYYY-MM-DD) for EVENT blocks
+  eventEndDate?: string; // Optional end date (YYYY-MM-DD) for EVENT blocks
+  durationMinutes?: number; // Optional explicit duration metadata, mainly for EVENT blocks
   isCompleted: boolean;
 }
 
 export interface Subject {
   id: string;
   name: string;
-  category: 'Pharmacy' | 'Coding' | 'Other';
+  category: 'Pharmacy' | 'Coding' | 'Other' | 'NEB';
   priority?: 'High' | 'Normal'; // New field for rotation logic
 }
 
@@ -21,6 +31,18 @@ export interface TodoItem {
   id: string;
   text: string;
   completed: boolean;
+}
+
+export interface FocusSession {
+  id: string;
+  startAt: string; // ISO string
+  endAt: string; // ISO string
+  durationMinutes: number;
+  taskName: string;
+  noiseType: string;
+  mode: 'DEEP' | 'POMODORO';
+  phase?: 'WORK' | 'SHORT_BREAK';
+  phoneViolationsDuringSession: number;
 }
 
 export interface Deadline {
@@ -37,6 +59,7 @@ export interface DayLog {
     main2: string | null;
     light: string | null;
   };
+  additionalSubjects?: string[]; // Extra subjects selected for today (counted once per day)
   schedule: ScheduleBlock[];
   deepWorkMinutes: number;
   phoneViolations: number; // "In hand" selections
@@ -57,9 +80,13 @@ export interface DayLog {
     aiMentorFeedback?: string;
   };
   subjectMinutes?: Record<string, number>; // ID -> Minutes
+  focusSessions?: FocusSession[];
+  unlockedAchievements?: string[];
 }
 
 export type AppMode = 'Normal' | 'Serious' | 'Exam';
+export type DateSystem = 'ENGLISH' | 'NEPALI';
+export type TimeFormat = '12H' | '24H';
 
 export interface WeeklyPlan {
   // 0 = Sunday, 1 = Monday, etc.
@@ -70,22 +97,68 @@ export interface WeeklyPlan {
   };
 }
 
+export interface WeeklyTargets {
+  deepWorkHours: number;
+  zeroViolationDays: number;
+  ritualCompletionDays: number;
+}
+
 export interface AppSettings {
   userName: string; // Personalization
   themeAccent: 'indigo' | 'emerald' | 'rose' | 'violet' | 'orange';
   themeMode: 'zinc' | 'black' | 'light'; // zinc = original deep gray, black = OLED, light = clean white
+  dateSystem: DateSystem;
+  timeFormat: TimeFormat;
   enableSounds: boolean;
   defaultFocusMinutes: number; // Workflow preference
   appMode: AppMode;
   weeklyPlan: WeeklyPlan; // Weekly Scheduler
+  weeklyTargets: WeeklyTargets;
+  cloudSyncEnabled?: boolean;
+  cloudSyncPushUrl?: string;
+  cloudSyncPullUrl?: string;
+  cloudSyncToken?: string;
   deadlines: Deadline[]; // Horizon Feature
   rituals: string[]; // New: Habits
+  productivityMonthlyGoals: string[];
+  productivityDailyGoals: string[];
   onboarded: boolean;
 }
 
-export type ViewState = 'TIMETABLE' | 'PLAN' | 'FOCUS' | 'NOTES' | 'NIGHT' | 'STATS';
+export type ViewState = 'TIMETABLE' | 'PLAN' | 'FOCUS' | 'NOTES' | 'CURRICULUM' | 'NIGHT' | 'STATS';
 
 export interface PhoneCheckResult {
   location: 'desk' | 'room' | 'hand';
   timestamp: number;
+}
+
+export interface ProductivityEntry {
+  schemaVersion?: number;
+  scoringVersion?: number;
+  id: string;
+  date: string;
+  time: string;
+  createdAt: string;
+  updatedAt?: string;
+  mainFocus: string;
+  activities?: string;
+  location: string;
+  mood: string;
+  learnings: string;
+  interests?: string;
+  pros: string[];
+  cons: string[];
+  gratitude: string[];
+  finalThoughts: string;
+  monthlyGoals: Array<{ id: string; text: string; completed: boolean }>;
+  dailyGoals: Array<{ id: string; text: string; completed: boolean }>;
+  goalCompletionPercent: number;
+  completedGoals: number;
+  totalGoals: number;
+  goalsScore: number;
+  learningScore: number;
+  prosConsScore: number;
+  gratitudeScore: number;
+  totalScore: number;
+  overrideUsed?: boolean;
 }

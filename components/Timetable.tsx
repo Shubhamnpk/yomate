@@ -1,16 +1,18 @@
-
-import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { DayLog, ScheduleBlock, AppMode } from '../types';
-import { updateScheduleStatus, updateScheduleBlock, splitBlockInSchedule, shiftScheduleForward, getAppSettings, getYesterdayLog, saveLog, getStreak } from '../services/storageService';
-import { formatTo12h, isTimeInRange, getMinutesDiff } from '../services/timeService';
+import React, { useEffect, useState, useRef, useMemo, startTransition } from 'react';
+import { DayLog, ScheduleBlock, AppMode, DateSystem, TimeFormat } from '../types';
+import { updateScheduleStatus, updateScheduleBlock, splitBlockInSchedule, shiftScheduleForward, pullBlockToNow, getAppSettings, getYesterdayLog, saveLog, getStreak, isBlockScheduledForDay, getScheduleForDate } from '../services/storageService';
+import { formatTimeByPreference, isTimeInRange, getMinutesDiff } from '../services/timeService';
+import { formatDateBySystem } from '../services/dateDisplay';
 import { SubjectManager } from './SubjectManager';
 import { EditBlockModal } from './EditBlockModal';
 import { BlockActionModal } from './BlockActionModal';
 import { SettingsView } from './SettingsView';
 import { BrainDump } from './BrainDump';
 import { getCustomSubjects } from '../services/storageService';
-import { Settings, Pencil, CheckCircle2, Circle, Play, ChevronRight, MessageSquareQuote, X, Moon, Sunrise, Coffee, AlarmClock, StickyNote, Flag, AlertTriangle, Dumbbell, Zap, Flame } from 'lucide-react';
+import { Settings, Pencil, CheckCircle2, Circle, Play, ChevronRight, ChevronLeft, MessageSquareQuote, X, Moon, Sunrise, AlarmClock, StickyNote, Flag, AlertTriangle, Dumbbell, Zap, Flame, CalendarRange, Lock, CalendarDays } from 'lucide-react';
 import { haptic } from '../services/hapticService';
+import { getLatestProductivitySubmission, getProductivityStreakEndingAt } from '../services/productivityService';
+import NepaliDate from 'nepali-date-converter';
 
 interface Props {
   log: DayLog;
@@ -20,7 +22,19 @@ interface Props {
   currentTime: string; // Lifted state
 }
 
-export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, currentTime }) => {
+const parseLocalDate = (dateStr: string) => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day, 12, 0, 0);
+};
+
+const toLocalDateString = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refreshApp, currentTime }) => {
   const [showStrategy, setShowStrategy] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showBrainDump, setShowBrainDump] = useState(false);
@@ -28,33 +42,53 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [appMode, setAppMode] = useState<AppMode>('Normal');
   const [streak, setStreak] = useState(0);
+  const [productivityStreak, setProductivityStreak] = useState(0);
   const [userName, setUserName] = useState('Student');
   const [rituals, setRituals] = useState<string[]>([]);
-
-  // New: Insight State
+  const [dateSystem, setDateSystem] = useState<DateSystem>('ENGLISH');
+  const [timeFormat, setTimeFormat] = useState<TimeFormat>('12H');
   const [yesterdayInsight, setYesterdayInsight] = useState<string | null>(null);
   const [showInsight, setShowInsight] = useState(true);
-
-  // New: Closest Deadline
   const [deadlineInfo, setDeadlineInfo] = useState<{ title: string, days: number } | null>(null);
-
-  // Smart Interaction State
   const [clickedBlock, setClickedBlock] = useState<ScheduleBlock | null>(null);
   const [allSubjects, setAllSubjects] = useState(getCustomSubjects());
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
+  const [showCompletedBlocks, setShowCompletedBlocks] = useState(false);
+  const [contentPanel, setContentPanel] = useState<'TIMELINE' | 'CALENDAR'>('TIMELINE');
+  const [calendarAnchorDate, setCalendarAnchorDate] = useState<Date>(() => parseLocalDate(log.date));
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(log.date);
+  const [showCalendarDayStats, setShowCalendarDayStats] = useState(false);
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const dayOfWeek = useMemo(() => {
+    const [y, m, d] = log.date.split('-').map(Number);
+    return new Date(y, m - 1, d).getDay();
+  }, [log.date]);
+  const visibleSchedule = useMemo(
+    () => log.schedule.filter(b => isBlockScheduledForDay(b, dayOfWeek, log.date)),
+    [log.schedule, dayOfWeek, log.date]
+  );
+  const timedVisibleSchedule = useMemo(
+    () => visibleSchedule.filter((block) => !block.isAllDay),
+    [visibleSchedule]
+  );
+
+  useEffect(() => {
+    setSelectedCalendarDate(log.date);
+    setCalendarAnchorDate(parseLocalDate(log.date));
+  }, [log.date]);
 
   // Refs for scrolling
   const activeBlockRef = useRef<HTMLDivElement | null>(null);
 
   // Detect Active Block ID
   useEffect(() => {
-    const active = log.schedule.find(b => isTimeInRange(currentTime, b.startTime, b.endTime));
+    const active = timedVisibleSchedule.find(b => isTimeInRange(currentTime, b.startTime, b.endTime));
     if (active && active.id !== activeBlockId) {
       setActiveBlockId(active.id);
     } else if (!active && activeBlockId) {
       setActiveBlockId(null);
     }
-  }, [currentTime, log.schedule]);
+  }, [currentTime, timedVisibleSchedule, activeBlockId]);
 
   // STRICT AUTO-SCROLL to Center
   useEffect(() => {
@@ -74,15 +108,18 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
     const settings = getAppSettings();
     setAppMode(settings.appMode);
     setStreak(getStreak());
+    const latestProductivity = getLatestProductivitySubmission();
+    setProductivityStreak(latestProductivity ? getProductivityStreakEndingAt(latestProductivity.date) : 0);
     setUserName(settings.userName || 'Student');
     setRituals(settings.rituals || []);
+    setDateSystem(settings.dateSystem || 'ENGLISH');
+    setTimeFormat(settings.timeFormat || '12H');
 
     const yesterday = getYesterdayLog();
     if (yesterday && yesterday.reflection.fixForTomorrow) {
       setYesterdayInsight(yesterday.reflection.fixForTomorrow);
     }
 
-    // Horizon: Find closest deadline
     if (settings.deadlines && settings.deadlines.length > 0) {
       const now = new Date().getTime();
       const sorted = settings.deadlines
@@ -103,11 +140,24 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
 
   }, [showSettings]);
 
+  useEffect(() => {
+    const handleEscape = () => {
+      setShowStrategy(false);
+      setShowSettings(false);
+      setShowBrainDump(false);
+      setSelectedBlockId(null);
+      setClickedBlock(null);
+      setEditMode(false);
+    };
+    window.addEventListener('app-escape', handleEscape);
+    return () => window.removeEventListener('app-escape', handleEscape);
+  }, []);
+
   // --- NEXT BLOCK LOGIC (Sleep/Break Detection) ---
   const { nextBlock, isSleep, timeUntil } = useMemo(() => {
     if (activeBlockId) return { nextBlock: null, isSleep: false, timeUntil: '' };
 
-    const sorted = [...log.schedule].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const sorted = [...timedVisibleSchedule].sort((a, b) => a.startTime.localeCompare(b.startTime));
     if (sorted.length === 0) return { nextBlock: null, isSleep: false, timeUntil: '' };
 
     const nextIndex = sorted.findIndex(b => b.startTime > currentTime);
@@ -141,8 +191,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
 
     return { nextBlock: targetBlock, isSleep: isSleepPhase, timeUntil: timeString };
 
-  }, [log.schedule, currentTime, activeBlockId]);
-
+  }, [timedVisibleSchedule, currentTime, activeBlockId]);
 
   const handleBlockClick = (block: ScheduleBlock) => {
     if (editMode) {
@@ -152,33 +201,51 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
     }
   };
 
+  // Defer storage-heavy work until after the next paint to improve tap responsiveness (INP).
+  const deferInteractionWork = (fn: () => void) => {
+    window.requestAnimationFrame(() => {
+      window.setTimeout(fn, 0);
+    });
+  };
+
   const handleBlockActionComplete = () => {
     if (clickedBlock) {
-      updateScheduleStatus(clickedBlock.id, !clickedBlock.isCompleted);
-      refreshLog();
+      const block = clickedBlock;
       setClickedBlock(null);
+      deferInteractionWork(() => {
+        updateScheduleStatus(block.id, !block.isCompleted);
+        startTransition(() => refreshLog());
+      });
     }
   };
 
   const handleBlockActionSplit = (newActivity: string, mode: 'Rest' | 'Study') => {
     if (clickedBlock) {
-      splitBlockInSchedule(clickedBlock.id, newActivity, mode);
-      refreshLog();
+      const blockId = clickedBlock.id;
       setClickedBlock(null);
+      deferInteractionWork(() => {
+        splitBlockInSchedule(blockId, newActivity, mode);
+        startTransition(() => refreshLog());
+      });
     }
   };
 
   const handleBlockActionShift = () => {
     if (clickedBlock) {
-      shiftScheduleForward(clickedBlock.id);
-      refreshLog();
+      const blockId = clickedBlock.id;
       setClickedBlock(null);
+      deferInteractionWork(() => {
+        shiftScheduleForward(blockId);
+        startTransition(() => refreshLog());
+      });
     }
   };
 
   const handleBlockSave = (id: string, updates: Partial<ScheduleBlock>) => {
-    updateScheduleBlock(id, updates);
-    refreshLog();
+    deferInteractionWork(() => {
+      updateScheduleBlock(id, updates);
+      startTransition(() => refreshLog());
+    });
   };
 
   const handleQuickFocus = (e: React.MouseEvent, activityName: string, scheduledEnd?: string) => {
@@ -196,8 +263,10 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
       updated = [...current, ritual];
     }
     const newLog = { ...log, completedRituals: updated };
-    saveLog(log.date, newLog);
-    refreshLog();
+    deferInteractionWork(() => {
+      saveLog(log.date, newLog);
+      startTransition(() => refreshLog());
+    });
   };
 
   const getRealActivityName = (blockActivity: string) => {
@@ -233,10 +302,197 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
     return getMinutesDiff(currentTime, end);
   };
 
+  const activeFocusBlock = useMemo(() => {
+    if (!activeBlockId) return null;
+    return timedVisibleSchedule.find(b => b.id === activeBlockId && (b.mode === 'Study' || b.mode === 'Deep Work')) || null;
+  }, [activeBlockId, timedVisibleSchedule]);
+
+  const toMinutes = (time: string) => {
+    const [h, m] = time.split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  const timelineSchedule = useMemo(
+    () => [...visibleSchedule].sort((a, b) => {
+      if (a.isAllDay && !b.isAllDay) return -1;
+      if (!a.isAllDay && b.isAllDay) return 1;
+      return a.startTime.localeCompare(b.startTime);
+    }),
+    [visibleSchedule]
+  );
+  const selectedCalendarDateObject = useMemo(() => parseLocalDate(selectedCalendarDate), [selectedCalendarDate]);
+  const calendarMonthMeta = useMemo(() => {
+    if (dateSystem === 'NEPALI') {
+      const bs = new NepaliDate(calendarAnchorDate);
+      const year = bs.getYear();
+      const month = bs.getMonth();
+      const firstDate = new NepaliDate(year, month, 1).toJsDate();
+      const nextMonthDate = month === 11 ? new NepaliDate(year + 1, 0, 1).toJsDate() : new NepaliDate(year, month + 1, 1).toJsDate();
+      const endDate = new Date(nextMonthDate);
+      endDate.setDate(endDate.getDate() - 1);
+      const daysInMonth = new NepaliDate(endDate).getDate();
+      return {
+        key: `${year}-${month}`,
+        label: formatDateBySystem(firstDate, dateSystem, { month: 'long', year: 'numeric' }),
+        firstDate,
+        daysInMonth,
+        startWeekday: firstDate.getDay(),
+        prevMonthAnchor: month === 0 ? new NepaliDate(year - 1, 11, 1).toJsDate() : new NepaliDate(year, month - 1, 1).toJsDate(),
+        nextMonthAnchor: nextMonthDate,
+      };
+    }
+
+    const year = calendarAnchorDate.getFullYear();
+    const month = calendarAnchorDate.getMonth();
+    const firstDate = new Date(year, month, 1, 12, 0, 0);
+    return {
+      key: `${year}-${month}`,
+      label: formatDateBySystem(firstDate, dateSystem, { month: 'long', year: 'numeric' }),
+      firstDate,
+      daysInMonth: new Date(year, month + 1, 0).getDate(),
+      startWeekday: firstDate.getDay(),
+      prevMonthAnchor: new Date(year, month - 1, 1, 12, 0, 0),
+      nextMonthAnchor: new Date(year, month + 1, 1, 12, 0, 0),
+    };
+  }, [calendarAnchorDate, dateSystem]);
+  const calendarDays = useMemo(() => {
+    const cells: Array<{ key: string; date: string | null; currentMonth: boolean }> = [];
+    for (let i = 0; i < calendarMonthMeta.startWeekday; i++) {
+      cells.push({ key: `empty-start-${i}`, date: null, currentMonth: false });
+    }
+
+    for (let day = 1; day <= calendarMonthMeta.daysInMonth; day++) {
+      const jsDate = dateSystem === 'NEPALI'
+        ? new NepaliDate(new NepaliDate(calendarMonthMeta.firstDate).getYear(), new NepaliDate(calendarMonthMeta.firstDate).getMonth(), day).toJsDate()
+        : new Date(calendarMonthMeta.firstDate.getFullYear(), calendarMonthMeta.firstDate.getMonth(), day, 12, 0, 0);
+      const dateStr = toLocalDateString(jsDate);
+      cells.push({ key: dateStr, date: dateStr, currentMonth: true });
+    }
+
+    while (cells.length % 7 !== 0) {
+      cells.push({ key: `empty-end-${cells.length}`, date: null, currentMonth: false });
+    }
+
+    return cells;
+  }, [calendarMonthMeta, dateSystem]);
+  const calendarDayDetails = useMemo(() => {
+    const deadlines = getAppSettings().deadlines || [];
+    return new Map(calendarDays.filter((cell) => cell.date).map((cell) => {
+      const date = cell.date!;
+      const schedule = getScheduleForDate(date).sort((a, b) => {
+        if (a.isAllDay && !b.isAllDay) return -1;
+        if (!a.isAllDay && b.isAllDay) return 1;
+        return a.startTime.localeCompare(b.startTime);
+      });
+      const eventCount = schedule.filter((item) => item.blockType === 'EVENT').length;
+      const holidayCount = schedule.filter((item) => item.eventKind === 'HOLIDAY').length;
+      const taskCount = schedule.filter((item) => item.blockType !== 'EVENT').length;
+      const deadlineCount = deadlines.filter((deadline) => deadline.date === date).length;
+      return [date, { schedule, eventCount, holidayCount, taskCount, deadlineCount }];
+    }));
+  }, [calendarDays]);
+  const selectedCalendarDayDetails = useMemo(
+    () => calendarDayDetails.get(selectedCalendarDate) || { schedule: [], eventCount: 0, holidayCount: 0, taskCount: 0, deadlineCount: 0 },
+    [calendarDayDetails, selectedCalendarDate]
+  );
+  const completedBlockCount = useMemo(
+    () => timelineSchedule.filter((block) => block.isCompleted).length,
+    [timelineSchedule]
+  );
+  const shouldCollapseCompleted = completedBlockCount > 1 && !editMode;
+
+  useEffect(() => {
+    if (!shouldCollapseCompleted) {
+      setShowCompletedBlocks(false);
+    }
+  }, [shouldCollapseCompleted]);
+
+  const streakRisk = useMemo(() => {
+    const now = toMinutes(currentTime);
+    const minRequired = Math.max(0, 16 - (log.deepWorkMinutes || 0));
+    const eveningStartsAt = 18 * 60;
+    if (streak <= 0 || now < eveningStartsAt || now >= 24 * 60 || minRequired <= 0) {
+      return null;
+    }
+    return {
+      minsUntilReset: (24 * 60) - now,
+      minRequired,
+    };
+  }, [currentTime, log.deepWorkMinutes, streak]);
+
+  const currentFreeWindow = useMemo(() => {
+    if (activeBlockId || !nextBlock || isSleep) return null;
+    const now = toMinutes(currentTime);
+    let nextStart = toMinutes(nextBlock.startTime);
+    if (nextStart < now) nextStart += 24 * 60;
+    const gapMinutes = nextStart - now;
+    if (gapMinutes < 5) return null;
+    return { gapMinutes, nextBlock };
+  }, [activeBlockId, nextBlock, isSleep, currentTime]);
+
+  const handleStartNextTaskNow = () => {
+    if (!currentFreeWindow) return;
+    haptic.success();
+    deferInteractionWork(() => {
+      const result = pullBlockToNow(currentFreeWindow.nextBlock.id, currentTime);
+      if (!result.success) {
+        haptic.error();
+        alert(result.message);
+      }
+      startTransition(() => refreshLog());
+    });
+  };
+
+  const handleFreeWindowFocus = () => {
+    if (!currentFreeWindow) return;
+    haptic.medium();
+    window.dispatchEvent(new CustomEvent('navigate-focus', {
+      detail: {
+        task: `Free Window: ${getRealActivityName(currentFreeWindow.nextBlock.activityName)}`,
+        durationMinutes: Math.max(10, Math.min(60, currentFreeWindow.gapMinutes)),
+      }
+    }));
+  };
+
+  const openCalendarPanel = () => {
+    haptic.light();
+    setContentPanel('CALENDAR');
+  };
+
+  const openTimelinePanel = () => {
+    haptic.light();
+    setContentPanel('TIMELINE');
+  };
+
+  const handleCalendarMonthStep = (direction: 'prev' | 'next') => {
+    haptic.light();
+    setCalendarAnchorDate(direction === 'prev' ? calendarMonthMeta.prevMonthAnchor : calendarMonthMeta.nextMonthAnchor);
+  };
+
+  const handleContentTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    const touch = e.touches[0];
+    swipeStartRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleContentTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!swipeStartRef.current) return;
+    const touch = e.changedTouches[0];
+    const deltaX = touch.clientX - swipeStartRef.current.x;
+    const deltaY = touch.clientY - swipeStartRef.current.y;
+    swipeStartRef.current = null;
+
+    if (Math.abs(deltaX) < 50 || Math.abs(deltaX) < Math.abs(deltaY)) return;
+    if (deltaX < 0 && contentPanel === 'TIMELINE') {
+      openCalendarPanel();
+    } else if (deltaX > 0 && contentPanel === 'CALENDAR') {
+      openTimelinePanel();
+    }
+  };
+
   return (
     <div className="p-5 pb-32 animate-in fade-in duration-500">
       {showSettings && (
-        <SettingsView onClose={() => setShowSettings(false)} refreshApp={refreshApp} />
+        <SettingsView onClose={() => setShowSettings(false)} refreshApp={refreshApp} refreshLog={refreshLog} />
       )}
 
       {showBrainDump && (
@@ -249,7 +505,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
 
       {selectedBlockId && (
         <EditBlockModal
-          block={log.schedule.find(b => b.id === selectedBlockId)!}
+          block={visibleSchedule.find(b => b.id === selectedBlockId)!}
           onSave={handleBlockSave}
           onClose={() => setSelectedBlockId(null)}
         />
@@ -280,17 +536,17 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
             Hi, {userName}
           </h1>
           <div className="flex items-center gap-2 mt-1">
-            {streak > 0 && (
-              <div className="flex items-center gap-1 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-full animate-in zoom-in">
-                <Flame size={12} className="text-orange-500 fill-orange-500 animate-pulse" />
-                <span className="text-[10px] font-bold text-orange-500 font-mono">{streak}</span>
-              </div>
-            )}
             <p className="text-zinc-500 text-sm font-medium uppercase tracking-wide">
-              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+              {formatDateBySystem(new Date(), dateSystem, { weekday: 'short', month: 'long', day: 'numeric' })}
             </p>
             <span className="text-zinc-700 dark:text-zinc-600">•</span>
             <p className="text-primary-500 text-xs font-bold uppercase tracking-wide">{appMode} Mode</p>
+          </div>
+          <div className={`inline-flex mt-2 items-center gap-1.5 px-2.5 py-0.5 rounded-full animate-in zoom-in ${productivityStreak > 0 ? 'bg-orange-500/10 border border-orange-500/20' : 'bg-zinc-200/70 dark:bg-zinc-800/70 border border-zinc-300 dark:border-zinc-700'}`}>
+            <Flame size={12} className={productivityStreak > 0 ? 'text-orange-500 fill-orange-500 animate-pulse' : 'text-zinc-500 dark:text-zinc-400'} />
+            <span className={`text-[10px] font-bold font-mono ${productivityStreak > 0 ? 'text-orange-500' : 'text-zinc-500 dark:text-zinc-400'}`}>
+              {productivityStreak} days{productivityStreak === 1 ? '' : 's'} streak
+            </span>
           </div>
         </div>
 
@@ -309,6 +565,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
 
           <button
             onClick={() => { haptic.medium(); setShowSettings(true); }}
+            title="Settings"
             className="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-400 hover:text-black dark:hover:text-white hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-sm active-scale"
           >
             <Settings size={20} />
@@ -360,6 +617,33 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
         </div>
       )}
 
+      {streakRisk && (
+        <div className="mb-4 p-4 rounded-xl border border-orange-500/30 bg-orange-500/10 animate-in slide-in-from-top-2">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-orange-500 text-white">
+              <Flame size={16} />
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-orange-700 dark:text-orange-300">Streak Risk</p>
+              <p className="text-sm font-semibold text-zinc-900 dark:text-white">
+                You'll lose your streak in {streakRisk.minsUntilReset}m unless you do {streakRisk.minRequired}m deep work.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => {
+                    haptic.medium();
+                    window.dispatchEvent(new CustomEvent('navigate-focus', { detail: { task: 'Streak Rescue Session', durationMinutes: 60 } }));
+                  }}
+                  className="px-3 py-2 rounded-lg bg-orange-500 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-orange-600 transition-colors"
+                >
+                  Start 60m Focus
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* DAILY RITUALS WIDGET (New Feature) */}
       {rituals.length > 0 && (
         <div className="mb-6 overflow-x-auto no-scrollbar flex gap-2 pb-2">
@@ -385,27 +669,62 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
         </div>
       )}
 
-      {/* --- SLEEP / GAP PHASE UI --- */}
-      {!activeBlockId && nextBlock && (
+      {currentFreeWindow && (
+        <div className="mb-6 p-5 rounded-3xl border border-emerald-500/25 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-950/35 dark:to-zinc-950 shadow-lg animate-in zoom-in-95 duration-500">
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-emerald-600 dark:text-emerald-300">Free Window</p>
+              <h2 className="text-xl font-bold text-zinc-900 dark:text-white mt-1">
+                {currentFreeWindow.gapMinutes}m available before the next block
+              </h2>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
+                Up next: {getRealActivityName(currentFreeWindow.nextBlock.activityName)}
+              </p>
+            </div>
+            <div className="text-right shrink-0">
+              <span className="block text-3xl font-mono font-bold text-emerald-600 dark:text-emerald-300">{timeUntil}</span>
+              <span className="text-[10px] uppercase font-bold text-zinc-500">remaining</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={handleStartNextTaskNow}
+              className="rounded-2xl p-4 bg-emerald-600 text-white text-left shadow-md hover:bg-emerald-500 transition-colors active-scale"
+            >
+              <p className="text-sm font-bold">Start Next Task</p>
+              <p className="text-[11px] text-white/75 mt-1">Pull the next block forward and keep momentum.</p>
+            </button>
+            <button
+              onClick={handleFreeWindowFocus}
+              className="rounded-2xl p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-left hover:bg-zinc-50 dark:hover:bg-zinc-900/80 transition-colors active-scale"
+            >
+              <p className="text-sm font-bold text-zinc-900 dark:text-white">Focus Sprint</p>
+              <p className="text-[11px] text-zinc-500 mt-1">Use this gap for a short deep work sprint.</p>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* --- SLEEP PHASE UI --- */}
+      {!activeBlockId && nextBlock && isSleep && (
         <div className={`mb-8 p-6 rounded-3xl border shadow-xl animate-in zoom-in-95 duration-500 relative overflow-hidden
-          ${isSleep
-            ? 'bg-gradient-to-br from-indigo-900 to-zinc-950 border-indigo-500/30 text-white'
-            : 'bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-900/50 dark:to-zinc-950 border-emerald-500/30'}`
+          bg-gradient-to-br from-indigo-900 to-zinc-950 border-indigo-500/30 text-white`
         }>
           {/* Animated Background */}
-          {isSleep && <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/20 rounded-full blur-3xl -mr-10 -mt-10 animate-pulse-slow"></div>}
+          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/20 rounded-full blur-3xl -mr-10 -mt-10 animate-pulse-slow"></div>
 
           <div className="relative z-10">
             <div className="flex items-center gap-3 mb-4">
-              <div className={`p-2.5 rounded-full ${isSleep ? 'bg-indigo-500/20 text-indigo-300' : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300'}`}>
-                {isSleep ? <Moon size={24} /> : <Coffee size={24} />}
+              <div className="p-2.5 rounded-full bg-indigo-500/20 text-indigo-300">
+                <Moon size={24} />
               </div>
               <div>
-                <h2 className={`text-xl font-bold leading-none ${isSleep ? 'text-white' : 'text-zinc-900 dark:text-white'}`}>
-                  {isSleep ? 'Sleep Protocol' : 'Free Time'}
+                <h2 className="text-xl font-bold leading-none text-white">
+                  Sleep Protocol
                 </h2>
-                <p className={`text-xs font-bold uppercase tracking-wider mt-1 ${isSleep ? 'text-indigo-300' : 'text-emerald-600 dark:text-emerald-300'}`}>
-                  {isSleep ? 'Rest & Recovery' : 'Break Active'}
+                <p className="text-xs font-bold uppercase tracking-wider mt-1 text-indigo-300">
+                  Rest & Recovery
                 </p>
               </div>
             </div>
@@ -414,15 +733,15 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
               <div>
                 <p className="text-zinc-500 dark:text-zinc-400 text-xs uppercase font-bold tracking-wider mb-1">Up Next</p>
                 <div className="flex items-center gap-2">
-                  {isSleep ? <Sunrise size={18} className="text-amber-500" /> : <AlarmClock size={18} className="text-zinc-400 dark:text-zinc-300" />}
-                  <span className={`text-lg font-medium truncate max-w-[150px] ${isSleep ? 'text-zinc-200' : 'text-zinc-900 dark:text-zinc-200'}`}>
+                  <Sunrise size={18} className="text-amber-500" />
+                  <span className="text-lg font-medium truncate max-w-[150px] text-zinc-200">
                     {getRealActivityName(nextBlock.activityName)}
                   </span>
                 </div>
               </div>
 
               <div className="text-right">
-                <span className={`block text-4xl font-mono font-bold tracking-tight ${isSleep ? 'text-white' : 'text-zinc-900 dark:text-white'}`}>{timeUntil}</span>
+                <span className="block text-4xl font-mono font-bold tracking-tight text-white">{timeUntil}</span>
                 <span className="text-[10px] text-zinc-500 uppercase font-bold">Until Start</span>
               </div>
             </div>
@@ -441,7 +760,7 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
               <p className="text-[10px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-widest mb-1">Mission Constraint (From Yesterday)</p>
               <p className="text-sm font-medium text-amber-900 dark:text-amber-100 italic">"{yesterdayInsight}"</p>
             </div>
-            <button onClick={() => setShowInsight(false)} className="text-amber-500/50 hover:text-amber-400">
+            <button title="Close Insight" onClick={() => setShowInsight(false)} className="text-amber-500/50 hover:text-amber-400">
               <X size={16} />
             </button>
           </div>
@@ -468,42 +787,97 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
         </button>
       </div>
 
-      <div className="relative border-l-2 border-zinc-200 dark:border-zinc-900 ml-3 space-y-6">
-        {log.schedule.map((block) => {
+      <div className="flex items-center gap-2 mb-4">
+        <button
+          onClick={openTimelinePanel}
+          className={`flex-1 rounded-2xl border px-4 py-3 text-xs font-bold uppercase tracking-widest transition-all ${contentPanel === 'TIMELINE' ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300'}`}
+        >
+          Timeline
+        </button>
+        <button
+          onClick={openCalendarPanel}
+          className={`flex-1 rounded-2xl border px-4 py-3 text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${contentPanel === 'CALENDAR' ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300'}`}
+        >
+          <CalendarDays size={14} />
+          Calendar
+        </button>
+      </div>
+      <div onTouchStart={handleContentTouchStart} onTouchEnd={handleContentTouchEnd}>
+        {contentPanel === 'TIMELINE' && (
+          <>
+            {shouldCollapseCompleted && (
+              <button
+                onClick={() => { haptic.light(); setShowCompletedBlocks((prev) => !prev); }}
+                className="w-full mb-4 flex items-center justify-between rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 px-4 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300 shadow-sm"
+              >
+                <span>{showCompletedBlocks ? 'Hide completed tasks' : `Show completed tasks (${completedBlockCount})`}</span>
+                <ChevronRight size={14} className={`transition-transform ${showCompletedBlocks ? 'rotate-90' : ''}`} />
+              </button>
+            )}
+
+            <div className="relative border-l-2 border-zinc-200 dark:border-zinc-900 ml-3">
+              {timelineSchedule.map((block) => {
           const active = block.id === activeBlockId;
           const activityName = getRealActivityName(block.activityName);
+          const isCalendarEvent = block.blockType === 'EVENT' || block.mode === 'Class' || block.mode === 'Event';
+          const isAcademicCalendarBlock = isCalendarEvent && (block.mode === 'Study' || block.mode === 'Class' || block.mode === 'Deep Work');
+          const modeBadgeClass = block.eventKind === 'HOLIDAY'
+            ? 'bg-amber-500/15 text-amber-800 dark:bg-amber-400/15 dark:text-amber-200'
+            : isCalendarEvent && !isAcademicCalendarBlock
+              ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-300'
+            : block.mode === 'Deep Work'
+              ? 'bg-sky-500/15 text-sky-800 dark:bg-cyan-400/15 dark:text-cyan-200'
+              : block.mode === 'Study' || block.mode === 'Class'
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                : block.mode === 'Task'
+                  ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400'
+                  : block.mode === 'Human'
+                    ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400';
+          const modeLabel = block.eventKind === 'HOLIDAY'
+            ? 'HOLIDAY'
+            : isCalendarEvent && !isAcademicCalendarBlock
+              ? 'EVENT'
+              : block.mode;
           const progress = active ? getBlockProgress(block.startTime, block.endTime) : 0;
           const minsLeft = active ? getTimeRemaining(block.endTime) : 0;
-
-          const isFocusable = (block.mode === 'Study' || block.mode === 'Deep Work') && active;
+          const isFocusable = !isCalendarEvent && (block.mode === 'Study' || block.mode === 'Deep Work') && active;
+          const isMinimizedCompleted = block.isCompleted && !editMode && !active;
+          const shouldAnimateHidden = shouldCollapseCompleted && !showCompletedBlocks && block.isCompleted && !active;
 
           // If Sleep Phase, dim everything
           const isDimmed = !active && isSleep;
 
           return (
-            <div
-              key={block.id}
-              className={`relative pl-8 group ${isDimmed ? 'opacity-50 grayscale hover:opacity-100 hover:grayscale-0 transition-opacity' : ''}`}
-              ref={active ? activeBlockRef : null}
-            >
+            <React.Fragment key={block.id}>
               <div
-                className={`absolute -left-[9px] top-6 w-4 h-4 rounded-full border-4 transition-all duration-500 z-10
+                className={`relative pl-8 group transition-all duration-500 ease-out ${
+                  shouldAnimateHidden ? 'max-h-0 overflow-hidden opacity-0 -translate-y-3 pointer-events-none mb-0' : 'max-h-[280px] opacity-100 translate-y-0 mb-6 last:mb-0'
+                } ${isDimmed ? 'opacity-50 grayscale hover:opacity-100 hover:grayscale-0 transition-opacity' : ''}`}
+                ref={active ? activeBlockRef : null}
+              >
+                <div
+                  className={`absolute -left-[9px] ${isMinimizedCompleted ? 'top-4' : 'top-6'} w-4 h-4 rounded-full border-4 transition-all duration-500 z-10 ${
+                    shouldAnimateHidden ? 'opacity-0 scale-75' : 'opacity-100'
+                  }
                 ${active
                     ? 'bg-primary-500 border-white dark:border-zinc-950 shadow-[0_0_15px_rgb(var(--primary))] scale-110'
                     : block.isCompleted
                       ? 'bg-zinc-400 dark:bg-zinc-800 border-zinc-50 dark:border-zinc-950'
                       : 'bg-zinc-200 dark:bg-zinc-950 border-zinc-100 dark:border-zinc-800'}`}
-              ></div>
+                ></div>
 
-              <div
-                onClick={() => handleBlockClick(block)}
-                className={`relative rounded-2xl border cursor-pointer transition-all duration-500 ease-out overflow-hidden group/card
+                <div
+                  onClick={() => handleBlockClick(block)}
+                  className={`relative rounded-2xl border cursor-pointer transition-all duration-500 ease-out overflow-hidden group/card
                   ${editMode
                     ? 'border-primary-500/30 bg-primary-500/5 hover:bg-primary-500/10'
                     : active
                       ? 'bg-gradient-to-br from-white to-zinc-50 dark:from-zinc-900 dark:to-zinc-950 border-primary-500/30 shadow-lg shadow-primary-900/10 scale-[1.02] ring-1 ring-primary-500/20'
-                      : block.isCompleted
-                        ? 'bg-zinc-100/50 dark:bg-zinc-900/30 border-zinc-200 dark:border-zinc-900 opacity-60 grayscale scale-[0.98]'
+                      : isCalendarEvent
+                        ? 'bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-950/20 dark:to-zinc-950 border-indigo-200 dark:border-indigo-900/30 hover:border-indigo-300 dark:hover:border-indigo-800'
+                        : block.isCompleted
+                        ? 'bg-zinc-100/70 dark:bg-zinc-900/30 border-zinc-200 dark:border-zinc-900 opacity-75 scale-[0.98]'
                         : 'bg-white dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800/50 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900/80'}
                 `}
               >
@@ -514,45 +888,67 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
                   ></div>
                 )}
 
-                <div className="relative p-5">
+                  <div className={`relative ${isMinimizedCompleted ? 'p-3' : 'p-5'}`}>
                   {editMode && (
                     <div className="absolute top-3 right-3 text-primary-400 opacity-50 group-hover/card:opacity-100">
                       <Pencil size={14} />
                     </div>
                   )}
 
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-1 rounded-md transition-colors
-                        ${block.mode === 'Deep Work' ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400' :
-                          block.mode === 'Study' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
-                            block.mode === 'Human' ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' :
-                              'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'}`}>
-                        {block.mode}
-                      </span>
-                      {active && (
-                        <span className="text-[10px] font-mono text-primary-600 dark:text-primary-400 font-bold animate-pulse">
-                          {minsLeft}m left
-                        </span>
-                      )}
-                    </div>
-
-                    <span className="font-mono text-xs text-zinc-500">
-                      {formatTo12h(block.startTime)} - {formatTo12h(block.endTime)}
-                    </span>
-                  </div>
-
-                  <div className="flex items-start justify-between gap-4">
-                    <h3 className={`font-display font-medium text-lg leading-snug transition-colors ${block.isCompleted && !editMode ? 'text-zinc-400 dark:text-zinc-500 line-through' : 'text-zinc-900 dark:text-zinc-200'}`}>
-                      {activityName}
-                    </h3>
-
-                    {!editMode && (
-                      <div className={`mt-1 transition-all duration-500 ${block.isCompleted ? 'text-emerald-500 scale-110' : 'text-zinc-300 dark:text-zinc-800 group-hover/card:text-zinc-400 dark:group-hover/card:text-zinc-700'}`}>
-                        {block.isCompleted ? <CheckCircle2 size={20} className="animate-in zoom-in spin-in-12 duration-300" /> : <Circle size={20} />}
+                  {isMinimizedCompleted ? (
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="font-display font-medium text-sm text-zinc-500 dark:text-zinc-500 line-through truncate">
+                          {activityName}
+                        </h3>
+                        <p className="font-mono text-[10px] text-zinc-500 mt-1">
+                          {formatTimeByPreference(block.startTime, timeFormat)} - {formatTimeByPreference(block.endTime, timeFormat)}
+                        </p>
                       </div>
-                    )}
-                  </div>
+                      <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-center mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-1 rounded-md transition-colors ${modeBadgeClass}`}>
+                            {modeLabel}
+                          </span>
+                          {isCalendarEvent && (
+                            <span className="inline-flex items-center text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-300" title="Fixed">
+                              <Lock size={10} />
+                            </span>
+                          )}
+                          {active && (
+                            <span className="text-[10px] font-mono text-primary-600 dark:text-primary-400 font-bold animate-pulse">
+                              {minsLeft}m left
+                            </span>
+                          )}
+                          {block.isAllDay && (
+                            <span className="text-[10px] font-mono text-indigo-600 dark:text-indigo-300 font-bold">
+                              ALL DAY
+                            </span>
+                          )}
+                        </div>
+
+                        <span className="font-mono text-xs text-zinc-500">
+                          {block.isAllDay ? 'All day' : `${formatTimeByPreference(block.startTime, timeFormat)} - ${formatTimeByPreference(block.endTime, timeFormat)}`}
+                        </span>
+                      </div>
+
+                      <div className="flex items-start justify-between gap-4">
+                        <h3 className={`font-display font-medium text-lg leading-snug transition-colors ${block.isCompleted && !editMode ? 'text-zinc-400 dark:text-zinc-500 line-through' : 'text-zinc-900 dark:text-zinc-200'}`}>
+                          {activityName}
+                        </h3>
+
+                        {!editMode && (
+                          <div className={`mt-1 transition-all duration-500 ${block.isCompleted ? 'text-emerald-500 scale-110' : 'text-zinc-300 dark:text-zinc-800 group-hover/card:text-zinc-400 dark:group-hover/card:text-zinc-700'}`}>
+                            {block.isCompleted ? <CheckCircle2 size={20} className="animate-in zoom-in spin-in-12 duration-300" /> : <Circle size={20} />}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
 
                   {isFocusable && !block.isCompleted && !editMode && (
                     <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800/50 flex animate-in slide-in-from-top-2">
@@ -568,12 +964,164 @@ export const Timetable: React.FC<Props> = ({ log, refreshLog, refreshApp, curren
                       </button>
                     </div>
                   )}
+
+                  </div>
                 </div>
               </div>
-            </div>
+            </React.Fragment>
           );
-        })}
+              })}
+            </div>
+          </>
+        )}
+
+        {contentPanel === 'CALENDAR' && (
+          <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
+            <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-5">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <button onClick={() => handleCalendarMonthStep('prev')} className="rounded-xl border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-zinc-600 dark:text-zinc-300">
+                  <ChevronLeft size={16} />
+                </button>
+                <div className="text-center min-w-0">
+                  <p className="text-[10px] uppercase tracking-widest text-zinc-500">Calendar</p>
+                  <h3 className="text-lg font-bold text-zinc-900 dark:text-white truncate">{calendarMonthMeta.label}</h3>
+                </div>
+                <button onClick={() => handleCalendarMonthStep('next')} className="rounded-xl border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-zinc-600 dark:text-zinc-300">
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-7 gap-2 text-center text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-3">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <div key={day}>{day}</div>)}
+              </div>
+
+              <div className="grid grid-cols-7 gap-2">
+                {calendarDays.map((cell) => {
+                  if (!cell.date) {
+                    return <div key={cell.key} className="aspect-square rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800 opacity-40" />;
+                  }
+
+                  const jsDate = parseLocalDate(cell.date);
+                  const isSelected = cell.date === selectedCalendarDate;
+                  const isToday = cell.date === log.date;
+                  const detail = calendarDayDetails.get(cell.date)!;
+                  const isHolidayDay = detail.holidayCount > 0;
+                  const dayLabel = dateSystem === 'NEPALI'
+                    ? String(new NepaliDate(jsDate).getDate())
+                    : String(jsDate.getDate());
+
+                  return (
+                    <button
+                      key={cell.key}
+                      onClick={() => { haptic.light(); setSelectedCalendarDate(cell.date!); }}
+                      className={`aspect-square rounded-2xl border p-2 text-left transition-all ${isSelected ? 'bg-primary-600 text-white border-primary-500 shadow-lg shadow-primary-500/20' : isHolidayDay ? 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/30 text-zinc-900 dark:text-rose-100 hover:border-rose-300 dark:hover:border-rose-800' : isToday ? 'bg-primary-500/10 border-primary-500/30 text-zinc-900 dark:text-white' : 'bg-white dark:bg-zinc-950/40 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700'}`}
+                    >
+                      <div className="flex h-full flex-col">
+                        <span className="text-sm font-bold">{dayLabel}</span>
+                        <div className="mt-auto flex flex-wrap gap-1">
+                          {detail.eventCount > 0 && <span className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-white' : detail.holidayCount > 0 ? 'bg-rose-500' : 'bg-indigo-500'}`} />}
+                          {detail.taskCount > 0 && <span className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-white/80' : 'bg-emerald-500'}`} />}
+                          {detail.deadlineCount > 0 && <span className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-amber-100' : 'bg-amber-500'}`} />}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-5">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest text-zinc-500">Selected day</p>
+                  <h3 className="text-lg font-bold text-zinc-900 dark:text-white">{formatDateBySystem(selectedCalendarDateObject, dateSystem, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</h3>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedCalendarDate(log.date);
+                    setCalendarAnchorDate(parseLocalDate(log.date));
+                    haptic.light();
+                  }}
+                  className="rounded-xl border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs font-bold uppercase tracking-widest text-zinc-600 dark:text-zinc-300"
+                >
+                  Today
+                </button>
+              </div>
+
+              <button
+                onClick={() => { haptic.light(); setShowCalendarDayStats((prev) => !prev); }}
+                className="mb-5 w-full flex items-center justify-between rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/30 px-4 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300"
+              >
+                <span>{showCalendarDayStats ? 'Hide day summary' : 'Show day summary'}</span>
+                <ChevronRight size={14} className={`transition-transform ${showCalendarDayStats ? 'rotate-90' : ''}`} />
+              </button>
+
+              {showCalendarDayStats && (
+                <div className="grid grid-cols-3 gap-3 mb-5 animate-in fade-in duration-200">
+                  <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-3">
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-500">Events</p>
+                    <p className="mt-1 text-xl font-bold text-zinc-900 dark:text-white">{selectedCalendarDayDetails.eventCount}</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-3">
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-500">Tasks</p>
+                    <p className="mt-1 text-xl font-bold text-zinc-900 dark:text-white">{selectedCalendarDayDetails.taskCount}</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-3">
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-500">Deadlines</p>
+                    <p className="mt-1 text-xl font-bold text-zinc-900 dark:text-white">{selectedCalendarDayDetails.deadlineCount}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {selectedCalendarDayDetails.schedule.length > 0 ? selectedCalendarDayDetails.schedule.map((item) => {
+                  const isEvent = item.blockType === 'EVENT';
+                  const isAcademicEvent = isEvent && (item.mode === 'Study' || item.mode === 'Class' || item.mode === 'Deep Work');
+                  const detailBadgeLabel = item.eventKind === 'HOLIDAY'
+                    ? 'Holiday'
+                    : isEvent && !isAcademicEvent
+                      ? 'Event'
+                      : item.mode;
+                  const detailBadgeClass = item.eventKind === 'HOLIDAY'
+                    ? 'bg-amber-500/15 text-amber-800 dark:bg-amber-400/15 dark:text-amber-200'
+                    : isEvent && !isAcademicEvent
+                      ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-300'
+                    : item.mode === 'Study' || item.mode === 'Class'
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+                      : item.mode === 'Deep Work'
+                        ? 'bg-sky-500/15 text-sky-800 dark:bg-cyan-400/15 dark:text-cyan-200'
+                        : item.mode === 'Human'
+                          ? 'bg-rose-500/10 text-rose-600 dark:text-rose-300'
+                          : 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-300';
+                  const detailCardClass = item.eventKind === 'HOLIDAY'
+                    ? 'border-rose-300 dark:border-rose-900/40 bg-rose-100/80 dark:bg-rose-950/20'
+                    : isEvent
+                      ? 'border-indigo-200 dark:border-indigo-900/30 bg-indigo-50/70 dark:bg-indigo-950/10'
+                      : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/30';
+                  return (
+                    <div key={`${selectedCalendarDate}-${item.id}`} className={`rounded-2xl border p-4 ${detailCardClass}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-zinc-900 dark:text-white truncate">{getRealActivityName(item.activityName)}</p>
+                          <p className="text-xs text-zinc-500 mt-1">{item.isAllDay ? 'All day' : `${formatTimeByPreference(item.startTime, timeFormat)} - ${formatTimeByPreference(item.endTime, timeFormat)}`}</p>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${detailBadgeClass}`}>
+                          {detailBadgeLabel}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }) : (
+                  <div className="rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-700 px-4 py-8 text-center text-sm text-zinc-500">
+                    No schedule blocks or imported events for this day.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
-};
+});
+

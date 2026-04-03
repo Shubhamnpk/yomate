@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { getHistory, getCustomSubjects } from '../services/storageService';
+import { getHistory, getCustomSubjects, getAppSettings } from '../services/storageService';
 import { X, TrendingUp, TrendingDown, Award, AlertTriangle, Clock, BookOpen, Download } from 'lucide-react';
+import { formatDateBySystem } from '../services/dateDisplay';
+import { DateSystem } from '../types';
 
 interface Props {
     onClose: () => void;
@@ -14,14 +16,15 @@ const PrintLayout: React.FC<{
     topSubjectName: string;
     isDeepWorkUp: boolean;
     deepWorkGrowth: number;
-}> = ({ current, grade, topSubjectName, isDeepWorkUp, deepWorkGrowth }) => {
+    dateSystem: DateSystem;
+}> = ({ current, grade, topSubjectName, isDeepWorkUp, deepWorkGrowth, dateSystem }) => {
     return (
         <div className="p-12 bg-white text-black font-sans max-w-[210mm] mx-auto min-h-[297mm]">
             {/* A4 Header */}
             <div className="flex justify-between items-start mb-12 border-b-2 border-black pb-6">
                 <div>
                     <h1 className="text-5xl font-bold mb-2 tracking-tight text-black">Focus Report</h1>
-                    <p className="text-zinc-500 font-medium">Generated on {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                    <p className="text-zinc-500 font-medium">Generated on {formatDateBySystem(new Date(), dateSystem, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
                 </div>
                 <div className="text-right">
                     <div className="text-8xl font-bold text-black leading-none">{grade}</div>
@@ -93,6 +96,7 @@ export const WeeklyReport: React.FC<Props> = ({ onClose }) => {
     // Fetch last 14 days to compare strict weeks
     const history = useMemo(() => getHistory(14), []);
     const customSubjects = useMemo(() => getCustomSubjects(), []);
+    const settings = useMemo(() => getAppSettings(), []);
 
     const thisWeek = history.slice(-7);
     const lastWeek = history.slice(0, 7);
@@ -114,11 +118,16 @@ export const WeeklyReport: React.FC<Props> = ({ onClose }) => {
                 });
             }
 
-            // Fallback Counts (Old System)
-            const { main1, main2, light } = l.selectedSubjects;
-            if (main1) subjectCounts[main1] = (subjectCounts[main1] || 0) + 1;
-            if (main2) subjectCounts[main2] = (subjectCounts[main2] || 0) + 1;
-            if (light) subjectCounts[light] = (subjectCounts[light] || 0) + 0.5;
+            // Fallback Counts (Old System + additional subjects)
+            const uniqueIds = Array.from(new Set([
+                l.selectedSubjects.main1,
+                l.selectedSubjects.main2,
+                l.selectedSubjects.light,
+                ...(l.additionalSubjects || []),
+            ].filter(Boolean) as string[]));
+            uniqueIds.forEach(id => {
+                subjectCounts[id] = (subjectCounts[id] || 0) + 1;
+            });
         });
 
         // Determine Top Subject
@@ -191,6 +200,7 @@ export const WeeklyReport: React.FC<Props> = ({ onClose }) => {
                     topSubjectName={topSubjectName || ''}
                     isDeepWorkUp={isDeepWorkUp}
                     deepWorkGrowth={deepWorkGrowth}
+                    dateSystem={settings.dateSystem}
                 />,
                 printRoot
             )}
@@ -216,7 +226,7 @@ export const WeeklyReport: React.FC<Props> = ({ onClose }) => {
                             >
                                 <Download size={20} />
                             </button>
-                            <button onClick={onClose} className="p-2 bg-black/20 hover:bg-black/40 rounded-full text-white transition-colors">
+                            <button title="Close Report" onClick={onClose} className="p-2 bg-black/20 hover:bg-black/40 rounded-full text-white transition-colors">
                                 <X size={20} />
                             </button>
                         </div>

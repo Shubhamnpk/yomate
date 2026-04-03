@@ -2,7 +2,7 @@
   "name": "Yomate",
   "short_name": "Yomate",
   "description": "A high-performance environment for deep work, study protocols, and time mastery.",
-  "start_url": " /",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#09090b",
   "theme_color": "#09090b",
@@ -39,12 +39,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
-    },
-    {
-      "src": "/yomate.png",
-      "sizes": "any",
-      "type": "image/png",
-      "purpose": "any"
     }
   ],
   "shortcuts": [

@@ -11,12 +11,17 @@
   "dependencies": {
     "@google/genai": "^1.40.0",
     "lucide-react": "0.330.0",
+    "nepali-date-converter": "^3.4.0",
+    "quill": "^2.0.3",
     "react": "18.2.0",
     "react-dom": "18.2.0",
+    "react-quill": "^2.0.0",
     "tone": "^15.1.22"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.24",
     "postcss": "^8.5.6",

@@ -1,19 +1,17 @@
-
 /**
  * Browser Notification Service
- * Sends native OS notifications when the timer finishes (even if tab is in background).
+ * Sends native OS notifications when the timer finishes, including in the background.
  */
 
-let permissionGranted = false;
+const canUseNotifications = () => typeof window !== 'undefined' && 'Notification' in window;
 
 export const requestNotificationPermission = async (): Promise<boolean> => {
-    if (!('Notification' in window)) {
+    if (!canUseNotifications()) {
         console.warn('Notifications not supported in this browser.');
         return false;
     }
 
     if (Notification.permission === 'granted') {
-        permissionGranted = true;
         return true;
     }
 
@@ -22,41 +20,27 @@ export const requestNotificationPermission = async (): Promise<boolean> => {
     }
 
     const result = await Notification.requestPermission();
-    permissionGranted = result === 'granted';
-    return permissionGranted;
+    return result === 'granted';
 };
 
-export const sendTimerNotification = (title: string, body: string, type: 'success' | 'alert' | 'info' = 'info') => {
-    if (!permissionGranted || Notification.permission !== 'granted') return;
-
-    const icons = {
-        success: '🎯',
-        alert: '⚠️',
-        info: 'ℹ️'
-    };
-
-    const colors = {
-        success: '#10b981', // emerald
-        alert: '#f43f5e',   // rose
-        info: '#6366f1'    // indigo
-    };
+export const sendTimerNotification = (
+    title: string,
+    body: string,
+    type: 'success' | 'alert' | 'info' = 'info'
+) => {
+    if (!canUseNotifications() || Notification.permission !== 'granted') return;
 
     try {
         const notification = new Notification(title, {
             body,
-            icon: '/yomate_icon_512_1770839402974.png',
-            badge: '/icon.svg',
+            icon: '/icons/manifest-icon-512.png',
+            badge: '/icons/manifest-icon-192.png',
             tag: 'yomate-timer',
             silent: false,
-            // vibrate: [200, 100, 200], // Not supported by all browsers via new Notification()
             // @ts-ignore - Some browsers support image in options
-            image: type === 'success' ? '/yomate.png' : undefined,
+            image: type === 'success' ? '/icons/manifest-icon-512.png' : undefined,
         });
 
-        // Haptic fallback if supported and if this code runs in an environment where hapticService works
-        // (Though notifications are usually for when the app is backgrounded)
-
-        // Auto-close after 10 seconds
         setTimeout(() => notification.close(), 10000);
 
         notification.onclick = () => {
@@ -73,5 +57,22 @@ export const sendSleepReminder = () => {
         'Yomate | Sleep Protocol',
         'Time to prepare for sleep. Your target is 00:30.',
         'info'
+    );
+};
+
+export const sendScheduleReminder = (blockName: string, minutes: number) => {
+    const minuteLabel = minutes === 1 ? 'minute' : 'minutes';
+    sendTimerNotification(
+        'Yomate | Block Reminder',
+        `${blockName} starts in ${minutes} ${minuteLabel}.`,
+        'info'
+    );
+};
+
+export const sendRitualReminder = (ritualName: string) => {
+    sendTimerNotification(
+        'Yomate | Ritual Reminder',
+        `You have not completed "${ritualName}" today.`,
+        'alert'
     );
 };

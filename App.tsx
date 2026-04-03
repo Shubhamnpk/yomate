@@ -1,11 +1,11 @@
 
-import React, { useEffect, useState, useRef } from 'react';
-import { initializeToday, getStoredLog, getAppSettings, resetApp, saveLog, saveAppSettings } from './services/storageService';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { initializeToday, getStoredLog, getAppSettings, getTodayDateString, resetApp, saveLog, saveAppSettings } from './services/storageService';
 import { DayLog, ViewState, AppSettings } from './types';
 import { getCurrentTime24 } from './services/timeService';
 import { initializeAudio, playAscensionSound } from './services/audioGen';
 import { haptic } from './services/hapticService';
-import { sendTimerNotification, sendSleepReminder } from './services/notificationService';
+import { sendTimerNotification, sendSleepReminder, sendScheduleReminder, sendRitualReminder } from './services/notificationService';
 import { Navigation } from './components/Navigation';
 import { Timetable } from './components/Timetable';
 import { DeepWork } from './components/DeepWork';
@@ -13,6 +13,7 @@ import { NightRoutine } from './components/NightRoutine';
 import { StatsView } from './components/StatsView';
 import { NotesView } from './components/NotesView';
 import { Onboarding } from './components/Onboarding';
+import { CurriculumTracker } from './components/CurriculumTracker';
 import { Moon, AlertTriangle, Terminal, X, RotateCcw, Move, Zap, Smartphone, CheckCircle2, Bell, Sparkles, UserCheck, Palette, Flame } from 'lucide-react';
 
 // Map of accent names to RGB values for Tailwind variable injection
@@ -36,11 +37,6 @@ const GlobalSleepHUD: React.FC<SleepHUDProps> = ({ currentTime }) => {
     const checkTime = () => {
       const [h, m] = currentTime.split(':').map(Number);
       const minutes = h * 60 + m;
-
-      // Logic:
-      // Target: 00:30 (24.5h)
-      // Warning: 22:30 (22.5h) to 00:30
-      // Danger: 00:31 to 05:00
 
       const targetMins = 24.5 * 60; // 1470 mins
       const currentMinsAdjusted = h < 5 ? (h + 24) * 60 + m : minutes;
@@ -135,7 +131,7 @@ const DebugConsole: React.FC<{
 
   // Helper to inject stats
   const modifyLog = (updates: Partial<DayLog>) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayDateString();
     const log = getStoredLog()[today] || initializeToday();
     saveLog(today, { ...log, ...updates });
     onRefresh();
@@ -159,7 +155,7 @@ const DebugConsole: React.FC<{
         </div>
         <div className="flex items-center gap-2">
           <Move size={12} className="text-zinc-600" />
-          <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={14} /></button>
+          <button title="Close Debug Console" onClick={onClose} className="text-zinc-500 hover:text-white"><X size={14} /></button>
         </div>
       </div>
 
@@ -170,6 +166,7 @@ const DebugConsole: React.FC<{
           <div className="flex gap-2 mb-2">
             <input
               type="time"
+              title="Override Current Time"
               className="bg-zinc-900 border border-zinc-700 rounded p-1.5 text-white text-xs font-mono flex-1 outline-none focus:border-emerald-500"
               onChange={(e) => onOverrideTime(e.target.value)}
               value={currentTime}
@@ -241,24 +238,28 @@ const DebugConsole: React.FC<{
           <label className="text-[9px] font-bold text-zinc-500 uppercase block mb-2 tracking-wider">State Injection</label>
           <div className="space-y-2">
             <button
-              onClick={() => modifyLog({ deepWorkMinutes: 65, schedule: getStoredLog()[new Date().toISOString().split('T')[0]].schedule.map(s => s.mode === 'Deep Work' ? { ...s, isCompleted: true } : s) })}
+              onClick={() => {
+                const today = getTodayDateString();
+                const todayLog = getStoredLog()[today] || initializeToday();
+                modifyLog({ deepWorkMinutes: 65, schedule: todayLog.schedule.map(s => s.mode === 'Deep Work' ? { ...s, isCompleted: true } : s) });
+              }}
               className="w-full py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded text-[10px] font-bold flex items-center justify-center gap-2 hover:bg-emerald-500/20"
             >
               <Zap size={12} /> Add 1hr Deep Work
             </button>
             <button
               onClick={() => {
-                const logs = getStoredLog();
                 const today = new Date();
                 // Inject logs for last 5 days
                 for (let i = 1; i <= 5; i++) {
                   const d = new Date(today);
                   d.setDate(today.getDate() - i);
-                  const dStr = d.toISOString().split('T')[0];
-                  // @ts-ignore
-                  logs[dStr] = { ...initializeToday(true), deepWorkMinutes: 60 };
+                  const year = d.getFullYear();
+                  const month = String(d.getMonth() + 1).padStart(2, '0');
+                  const day = String(d.getDate()).padStart(2, '0');
+                  const dStr = `${year}-${month}-${day}`;
+                  saveLog(dStr, { ...initializeToday(true), date: dStr, deepWorkMinutes: 60 });
                 }
-                localStorage.setItem('youmeet_data_v5', JSON.stringify(logs));
                 onRefresh();
               }}
               className="w-full py-2 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded text-[10px] font-bold flex items-center justify-center gap-2 hover:bg-orange-500/20"
@@ -294,7 +295,7 @@ const DebugConsole: React.FC<{
   );
 }
 
-const VIEW_ORDER: ViewState[] = ['TIMETABLE', 'NOTES', 'FOCUS', 'STATS', 'NIGHT'];
+const VIEW_ORDER: ViewState[] = ['TIMETABLE', 'NOTES', 'CURRICULUM', 'FOCUS', 'STATS', 'NIGHT'];
 
 const App: React.FC = () => {
   const [currentView, setView] = useState<ViewState>('TIMETABLE');
@@ -302,63 +303,68 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(getAppSettings());
   const [initialFocusTask, setInitialFocusTask] = useState<string>('');
   const [scheduledEnd, setScheduledEnd] = useState<string | null>(null);
-
-  // Swipe Navigation State
-  const touchStart = useRef<number | null>(null);
-  const touchEnd = useRef<number | null>(null);
+  const [initialFocusDuration, setInitialFocusDuration] = useState<number | null>(null);
 
   // Time State (Lifted for Debugging)
   const [realTime, setRealTime] = useState(getCurrentTime24());
   const [overrideTime, setOverrideTime] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
+  const notifiedRef = useRef<Set<string>>(new Set());
+  const lastCheckedEffectiveRef = useRef<string | null>(null);
+  const lastNotifiedDateRef = useRef<string | null>(null);
 
   const effectiveTime = overrideTime || realTime;
+  const primaryRgb = ACCENT_COLORS[settings.themeAccent] || ACCENT_COLORS['indigo'];
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStart.current = e.targetTouches[0].clientX;
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    touchEnd.current = e.targetTouches[0].clientX;
-  };
-
-  const handleTouchEnd = () => {
-    if (!touchStart.current || !touchEnd.current) return;
-    const distance = touchStart.current - touchEnd.current;
-    const isLeftSwipe = distance > 70;
-    const isRightSwipe = distance < -70;
-
-    if (isLeftSwipe || isRightSwipe) {
-      const currentIndex = VIEW_ORDER.indexOf(currentView);
-      let nextIndex = currentIndex;
-
-      if (isLeftSwipe && currentIndex < VIEW_ORDER.length - 1) {
-        nextIndex = currentIndex + 1;
-      } else if (isRightSwipe && currentIndex > 0) {
-        nextIndex = currentIndex - 1;
-      }
-
-      if (nextIndex !== currentIndex) {
-        haptic.light();
-        setView(VIEW_ORDER[nextIndex]);
-      }
-    }
-
-    touchStart.current = null;
-    touchEnd.current = null;
+  const isTypingElement = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
   };
 
   useEffect(() => {
-    // Clock Tick
+    // Clock Tick — refresh every 5s for tighter timeline updates.
+    // 1s intervals caused a full React tree re-render every second, killing mobile perf.
     const interval = setInterval(() => {
       setRealTime(getCurrentTime24());
-    }, 1000);
+    }, 5000);
 
-    // DevTools Shortcut (Ctrl + D)
+    // Global keyboard shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isTypingElement(e.target)) return;
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         setShowDebug(prev => !prev);
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        setShowDebug(false);
+        window.dispatchEvent(new CustomEvent('app-escape'));
+        return;
+      }
+
+      if (e.key === ' ') {
+        e.preventDefault();
+        if (currentView !== 'FOCUS') {
+          setView('FOCUS');
+        }
+        window.dispatchEvent(new CustomEvent('focus-toggle'));
+        return;
+      }
+
+      if (e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        setView('NOTES');
+        setTimeout(() => window.dispatchEvent(new CustomEvent('quick-note')), 0);
+        return;
+      }
+
+      if (['1', '2', '3', '4', '5'].includes(e.key)) {
+        e.preventDefault();
+        const idx = Number(e.key) - 1;
+        if (VIEW_ORDER[idx]) setView(VIEW_ORDER[idx]);
       }
     };
 
@@ -412,19 +418,128 @@ const App: React.FC = () => {
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor);
   }, [settings.themeMode]);
 
-  const refreshLog = () => {
-    const todayStr = new Date().toISOString().split('T')[0];
+  useEffect(() => {
+    const favicon = document.querySelector('link[rel="icon"]') as HTMLLinkElement | null;
+    if (!favicon) return;
+
+    const rgb = primaryRgb.split(' ').map(Number);
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, 64, 64);
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(0, 0, 64, 64);
+    ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+    ctx.beginPath();
+    ctx.arc(32, 32, 20, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(32, 32, 7, 0, Math.PI * 2);
+    ctx.fill();
+    favicon.href = canvas.toDataURL('image/png');
+  }, [primaryRgb]);
+
+  useEffect(() => {
+    if (!dayLog) return;
+    const dateKey = dayLog.date;
+
+    // Reset daily notifications when the day changes so new-day notifications can fire
+    if (lastNotifiedDateRef.current !== dateKey) {
+      notifiedRef.current = new Set();
+      lastNotifiedDateRef.current = dateKey;
+    }
+
+    const [h, m] = effectiveTime.split(':').map(Number);
+    const currentMins = h * 60 + m;
+    const currentAdjusted = h < 5 ? (h + 24) * 60 + m : currentMins;
+
+    // Previous effective time (if any) used to detect crossings
+    const prevEffective = lastCheckedEffectiveRef.current;
+    const prevMins = prevEffective ? prevEffective.split(':').map(Number).reduce((acc, x, i) => acc + (i === 0 ? x * 60 : x), 0) : null;
+
+    // Schedule reminders: detect crossing into the "<=5 minutes remaining" window
+    const sorted = [...dayLog.schedule].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const nextBlock = sorted.find(b => b.startTime > effectiveTime) || sorted[0];
+
+    if (nextBlock) {
+      const [bh, bm] = nextBlock.startTime.split(':').map(Number);
+      let minsUntil = (bh * 60 + bm) - currentMins;
+      if (minsUntil < 0) minsUntil += 24 * 60;
+      const scheduleKey = `${dateKey}:schedule:${nextBlock.id}`;
+
+      // compute previous minsUntil to detect crossing (if we have a previous time)
+      let prevMinsUntil: number | null = null;
+      if (prevMins !== null) {
+        let p = (bh * 60 + bm) - prevMins;
+        if (p < 0) p += 24 * 60;
+        prevMinsUntil = p;
+      }
+
+      // Fire when we crossed into <=5 minutes remaining (but still >0)
+      if (minsUntil <= 5 && minsUntil > 0 && (prevMinsUntil === null ? true : prevMinsUntil > 5) && !notifiedRef.current.has(scheduleKey)) {
+        sendScheduleReminder(nextBlock.activityName, Math.max(1, Math.floor(minsUntil)));
+        notifiedRef.current.add(scheduleKey);
+      }
+    }
+
+    // Sleep reminder: fire if we've entered the target window since last check
+    const sleepKey = `${dateKey}:sleep30`;
+    const intervalMins = 1; // interval used for tick (roughly 1 minute)
+    if (!notifiedRef.current.has(sleepKey)) {
+      const sleptWindowStart = 24 * 60; // 00:00 represented as 24*60 for adjusted comparison
+      const inCurrentWindow = currentAdjusted >= sleptWindowStart && currentAdjusted < sleptWindowStart + intervalMins;
+      const crossedIntoWindow = prevMins !== null && ((prevMins < sleptWindowStart && currentAdjusted >= sleptWindowStart) || (prevMins >= sleptWindowStart && currentAdjusted >= sleptWindowStart && prevMins < currentAdjusted));
+      if ((inCurrentWindow || crossedIntoWindow) && !notifiedRef.current.has(sleepKey)) {
+        sendSleepReminder();
+        notifiedRef.current.add(sleepKey);
+      }
+    }
+
+    // Ritual reminder: similar windowed check around 20:00
+    const ritualKey = `${dateKey}:ritual`;
+    const rituals = settings.rituals || [];
+    const completed = new Set(dayLog.completedRituals || []);
+    const pendingRitual = rituals.find(r => !completed.has(r));
+    if (pendingRitual && !notifiedRef.current.has(ritualKey)) {
+      const ritualWindowStart = 20 * 60;
+      const inRitualWindow = currentMins >= ritualWindowStart && currentMins < ritualWindowStart + intervalMins;
+      const crossedRitual = prevMins !== null && prevMins < ritualWindowStart && currentMins >= ritualWindowStart;
+      if (inRitualWindow || crossedRitual) {
+        sendRitualReminder(pendingRitual);
+        notifiedRef.current.add(ritualKey);
+      }
+    }
+
+    // Remember last checked effective time for next tick
+    lastCheckedEffectiveRef.current = effectiveTime;
+  }, [effectiveTime, dayLog, settings.rituals]);
+
+  const refreshLog = useCallback(() => {
+    const todayStr = getTodayDateString();
     const logs = getStoredLog();
     if (logs[todayStr]) {
       setDayLog(logs[todayStr]);
     } else {
       setDayLog(initializeToday());
     }
-  };
+  }, []);
 
-  const refreshApp = () => {
+  useEffect(() => {
+    if (!dayLog) return;
+    const todayStr = getTodayDateString();
+    if (dayLog.date !== todayStr) {
+      setDayLog(initializeToday());
+      lastCheckedEffectiveRef.current = null;
+    }
+  }, [realTime, dayLog]);
+
+  const refreshApp = useCallback(() => {
     setSettings(getAppSettings());
-  };
+  }, []);
 
   useEffect(() => {
     setDayLog(initializeToday());
@@ -434,14 +549,26 @@ const App: React.FC = () => {
     const handleFocusNav = (e: any) => {
       const task = e.detail?.task;
       const end = e.detail?.scheduledEnd;
+      const durationMinutes = e.detail?.durationMinutes;
       if (task) {
         setInitialFocusTask(task);
         setScheduledEnd(end || null);
+        setInitialFocusDuration(typeof durationMinutes === 'number' && durationMinutes > 0 ? durationMinutes : null);
         setView('FOCUS');
       }
     };
+    const handleViewNav = (e: any) => {
+      const view = e.detail?.view as ViewState | undefined;
+      if (view && VIEW_ORDER.includes(view)) {
+        setView(view);
+      }
+    };
     window.addEventListener('navigate-focus', handleFocusNav);
-    return () => window.removeEventListener('navigate-focus', handleFocusNav);
+    window.addEventListener('navigate-view', handleViewNav);
+    return () => {
+      window.removeEventListener('navigate-focus', handleFocusNav);
+      window.removeEventListener('navigate-view', handleViewNav);
+    };
   }, []);
 
   if (!dayLog) return <div className="h-[100dvh] bg-zinc-950 flex items-center justify-center text-zinc-500">Loading Protocol...</div>;
@@ -453,21 +580,21 @@ const App: React.FC = () => {
     light: 'bg-zinc-50'
   }[settings.themeMode] || 'bg-black';
 
-  const primaryRgb = ACCENT_COLORS[settings.themeAccent] || ACCENT_COLORS['indigo'];
-
   return (
     <div
       className={`h-[100dvh] w-full ${themeBg} text-zinc-900 dark:text-zinc-200 font-sans selection:bg-primary-500/30 overflow-hidden flex flex-col relative transition-colors duration-700`}
       style={{ '--primary': primaryRgb, '--primary-rgb': primaryRgb } as React.CSSProperties}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
     >
-      {/* Background Decorative Layer */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-40">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary-500/10 blur-[120px] rounded-full animate-pulse-soft"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-500/10 blur-[120px] rounded-full animate-pulse-soft " style={{ animationDelay: '1.5s' }}></div>
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
+      {/* Background Decorative Layer — GPU-optimized: reduced blur radius, will-change hints, removed external network request */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-40" style={{ contain: 'strict' }}>
+        <div
+          className="absolute top-[-10%] left-[-10%] w-[35%] h-[35%] bg-primary-500/10 blur-[60px] rounded-full animate-pulse-soft"
+          style={{ willChange: 'opacity, transform', transform: 'translateZ(0)' }}
+        ></div>
+        <div
+          className="absolute bottom-[-10%] right-[-10%] w-[35%] h-[35%] bg-indigo-500/10 blur-[60px] rounded-full animate-pulse-soft"
+          style={{ willChange: 'opacity, transform', transform: 'translateZ(0)', animationDelay: '2s' }}
+        ></div>
       </div>
 
       {!settings.onboarded ? (
@@ -485,7 +612,9 @@ const App: React.FC = () => {
             onRefresh={refreshLog}
           />
 
-          <div className={`w-full max-w-md mx-auto h-full flex flex-col relative ${themeBg} shadow-2xl`}>
+          <div
+            className={`w-full max-w-md mx-auto h-full flex flex-col relative ${themeBg} shadow-2xl`}
+          >
 
             {/* Main Content Area */}
             <main className="flex-1 overflow-y-auto scroll-smooth pb-safe no-scrollbar">
@@ -498,12 +627,14 @@ const App: React.FC = () => {
                 />
               )}
               {currentView === 'NOTES' && <NotesView log={dayLog} refreshLog={refreshLog} />}
+              {currentView === 'CURRICULUM' && <CurriculumTracker />}
               {currentView === 'FOCUS' && (
                 <DeepWork
                   log={dayLog}
                   refreshLog={refreshLog}
                   initialTask={initialFocusTask}
                   scheduledEnd={scheduledEnd}
+                  initialDurationMinutes={initialFocusDuration}
                 />
               )}
               {currentView === 'STATS' && <StatsView />}

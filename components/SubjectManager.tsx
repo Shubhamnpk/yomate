@@ -2,8 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { DayLog, Subject, AppMode } from '../types';
 import { getCustomSubjects, saveLog, getHistory, getAppSettings } from '../services/storageService';
-import { Sparkles, Plus, AlertCircle, Star, X } from 'lucide-react';
+import { Sparkles, Plus, Star, X, BookOpen } from 'lucide-react';
 import { haptic } from '../services/hapticService';
+import { Model } from './ui/model';
 
 interface Props {
   log: DayLog;
@@ -15,6 +16,18 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [recommendations, setRecommendations] = useState<{ subject: Subject, count: number }[]>([]);
   const [appMode, setAppMode] = useState<AppMode>('Normal');
+  const selectedInSlots = [log.selectedSubjects.main1, log.selectedSubjects.main2, log.selectedSubjects.light].filter(Boolean) as string[];
+  const additionalSelected = log.additionalSubjects || [];
+
+  const getUniqueSubjectIdsForDay = (day: DayLog) => {
+    const ids = [
+      day.selectedSubjects.main1,
+      day.selectedSubjects.main2,
+      day.selectedSubjects.light,
+      ...(day.additionalSubjects || []),
+    ].filter(Boolean) as string[];
+    return Array.from(new Set(ids));
+  };
 
   useEffect(() => {
     const allSubjects = getCustomSubjects();
@@ -28,13 +41,12 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
     allSubjects.forEach(s => counts[s.id] = 0);
 
     history.forEach(day => {
-      if (day.selectedSubjects.main1) counts[day.selectedSubjects.main1] = (counts[day.selectedSubjects.main1] || 0) + 1;
-      if (day.selectedSubjects.main2) counts[day.selectedSubjects.main2] = (counts[day.selectedSubjects.main2] || 0) + 1;
-      // Light counts as 0.5 study unit
-      if (day.selectedSubjects.light) counts[day.selectedSubjects.light] = (counts[day.selectedSubjects.light] || 0) + 0.5;
+      getUniqueSubjectIdsForDay(day).forEach(id => {
+        counts[id] = (counts[id] || 0) + 1;
+      });
     });
 
-    const currentSelection = [log.selectedSubjects.main1, log.selectedSubjects.main2, log.selectedSubjects.light];
+    const currentSelection = getUniqueSubjectIdsForDay(log);
 
     const ranked = allSubjects
       .filter(s => !currentSelection.includes(s.id)) // Don't recommend what's already picked today
@@ -52,6 +64,19 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
   const handleSelect = (slot: 'main1' | 'main2' | 'light', subjectId: string) => {
     const newLog = { ...log };
     newLog.selectedSubjects[slot] = subjectId === newLog.selectedSubjects[slot] ? null : subjectId;
+    if (subjectId && (newLog.additionalSubjects || []).includes(subjectId)) {
+      newLog.additionalSubjects = (newLog.additionalSubjects || []).filter(id => id !== subjectId);
+    }
+    saveLog(log.date, newLog);
+    refreshLog();
+  };
+
+  const handleAdditionalToggle = (subjectId: string) => {
+    if (selectedInSlots.includes(subjectId)) return;
+    const current = new Set(log.additionalSubjects || []);
+    if (current.has(subjectId)) current.delete(subjectId);
+    else current.add(subjectId);
+    const newLog = { ...log, additionalSubjects: Array.from(current) };
     saveLog(log.date, newLog);
     refreshLog();
   };
@@ -63,26 +88,26 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
     else if (!log.selectedSubjects.main2) slot = 'main2';
     else if (!log.selectedSubjects.light) slot = 'light';
 
-    if (slot) {
-      handleSelect(slot, subjectId);
-    } else {
-      alert("All slots are full. Please clear a slot (Main 1, Main 2, or Light) to add this subject.");
-    }
+    if (slot) handleSelect(slot, subjectId);
+    else handleAdditionalToggle(subjectId);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-300">
-      <div onClick={() => { haptic.light(); onClose(); }} className="absolute inset-0"></div>
-      <div className="bg-zinc-900 border-t sm:border border-zinc-800 w-full max-w-md sm:rounded-2xl p-6 sm:pb-6 pb-12 shadow-2xl relative animate-slide-up sm:animate-in sm:zoom-in-95 flex flex-col max-h-[85vh]">
-        <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6 sm:hidden shrink-0" />
+    <Model
+      onClose={() => { haptic.light(); onClose(); }}
+      zIndexClass="z-50"
+      layout="bottom"
+      showMobileHandle
+      contentClassName="bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 sm:rounded-2xl p-6 sm:pb-6 pb-12 animate-slide-up sm:animate-in sm:zoom-in-95 flex flex-col max-h-[85vh]"
+    >
         <div className="flex justify-between items-center mb-6 shrink-0">
           <div>
-            <h2 className="text-xl font-display font-bold text-white">Strategy</h2>
+            <h2 className="text-xl font-display font-bold text-zinc-900 dark:text-white">Strategy</h2>
             <p className="text-xs text-zinc-500 font-medium">
               {appMode === 'Exam' ? 'Exam Mode: Maximize Coverage' : 'Balance your study mix'}
             </p>
           </div>
-          <button onClick={() => { haptic.light(); onClose(); }} className="p-2 bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors hidden sm:block">
+          <button title="Close" onClick={() => { haptic.light(); onClose(); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-full text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white transition-colors hidden sm:block">
             <X size={16} />
           </button>
         </div>
@@ -91,7 +116,7 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
           {/* Recommendations Section */}
           {recommendations.length > 0 && (
             <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-4">
-              <div className="flex items-center gap-2 mb-3 text-indigo-300">
+              <div className="flex items-center gap-2 mb-3 text-indigo-600 dark:text-indigo-300">
                 <Sparkles size={14} className="animate-pulse" />
                 <span className="text-xs font-bold uppercase tracking-wider">Smart Suggestions</span>
               </div>
@@ -103,12 +128,12 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
                   <button
                     key={subject.id}
                     onClick={() => { haptic.medium(); applyRecommendation(subject.id); }}
-                    className="flex items-center gap-2 px-3 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/50 rounded-xl transition-all whitespace-nowrap group active-scale shadow-sm"
+                    className="flex items-center gap-2 px-3 py-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700/50 rounded-xl transition-all whitespace-nowrap group active-scale shadow-sm"
                   >
-                    <span className="text-xs font-bold text-zinc-200">{subject.name}</span>
+                    <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{subject.name}</span>
                     {subject.priority === 'High' && <Star size={10} className="text-amber-400 fill-amber-400" />}
                     {count === 0 && <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.5)]"></span>}
-                    <Plus size={12} className="text-zinc-500 group-hover:text-white transition-colors" />
+                    <Plus size={12} className="text-zinc-500 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors" />
                   </button>
                 ))}
               </div>
@@ -120,15 +145,16 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
               <label className="text-[10px] font-bold text-zinc-500 uppercase mb-2 block tracking-widest">Main Focus 1</label>
               <div className="relative">
                 <select
-                  className="w-full bg-black text-white p-4 rounded-xl border border-zinc-800 focus:border-primary-500/50 outline-none appearance-none text-sm font-medium transition-all"
+                  className="w-full bg-white dark:bg-black text-zinc-900 dark:text-white p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 focus:border-primary-500/50 outline-none appearance-none text-sm font-medium transition-all"
                   value={log.selectedSubjects.main1 || ''}
+                  title="Select Subject for Main Focus 1"
                   onChange={(e) => { haptic.light(); handleSelect('main1', e.target.value); }}
                 >
                   <option value="">(Empty Slot)</option>
-                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name} {s.priority === 'High' ? '★' : ''}</option>)}
+                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name}{s.priority === 'High' ? ' (High)' : ''}</option>)}
                 </select>
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-600">
-                  <BookIcon />
+                  <BookOpen />
                 </div>
               </div>
             </div>
@@ -136,16 +162,12 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
             <div>
               <label className="text-[10px] font-bold text-zinc-500 uppercase mb-2 block tracking-widest">Main Focus 2</label>
               <div className="relative">
-                <select
-                  className="w-full bg-black text-white p-4 rounded-xl border border-zinc-800 focus:border-primary-500/50 outline-none appearance-none text-sm font-medium transition-all"
-                  value={log.selectedSubjects.main2 || ''}
-                  onChange={(e) => { haptic.light(); handleSelect('main2', e.target.value); }}
-                >
+                <select title="Select your second main focus subject" className="w-full bg-white dark:bg-black text-zinc-900 dark:text-white p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 focus:border-primary-500/50 outline-none appearance-none text-sm font-medium transition-all" value={log.selectedSubjects.main2 || ''} onChange={(e) => { haptic.light(); handleSelect('main2', e.target.value); }}>
                   <option value="">(Empty Slot)</option>
-                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name} {s.priority === 'High' ? '★' : ''}</option>)}
+                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name}{s.priority === 'High' ? ' (High)' : ''}</option>)}
                 </select>
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-600">
-                  <BookIcon />
+                  <BookOpen />
                 </div>
               </div>
             </div>
@@ -154,17 +176,47 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
               <label className="text-[10px] font-bold text-zinc-500 uppercase mb-2 block tracking-widest text-emerald-500/80">Light / Review</label>
               <div className="relative">
                 <select
-                  className="w-full bg-black text-zinc-300 p-4 rounded-xl border border-zinc-800 focus:border-emerald-500/50 outline-none appearance-none text-sm font-medium transition-all"
+                  className="w-full bg-white dark:bg-black text-zinc-700 dark:text-zinc-300 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 focus:border-emerald-500/50 outline-none appearance-none text-sm font-medium transition-all"
                   value={log.selectedSubjects.light || ''}
+                  title="Select a subject for light study or review. This slot is ideal for subjects you want to keep in rotation without heavy focus."
                   onChange={(e) => { haptic.light(); handleSelect('light', e.target.value); }}
                 >
                   <option value="">(Empty Slot)</option>
-                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name} {s.priority === 'High' ? '★' : ''}</option>)}
+                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name}{s.priority === 'High' ? ' (High)' : ''}</option>)}
                 </select>
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-600">
-                  <BookIcon />
+                  <BookOpen />
                 </div>
               </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-zinc-500 uppercase mb-2 block tracking-widest">Additional Subjects (Multi)</label>
+              <div className="flex flex-wrap gap-2">
+                {subjects.map(s => {
+                  const isDisabled = selectedInSlots.includes(s.id);
+                  const isSelected = additionalSelected.includes(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      disabled={isDisabled}
+                      onClick={() => { haptic.light(); handleAdditionalToggle(s.id); }}
+                      className={`px-3 py-2 rounded-xl border text-xs font-semibold transition-all active-scale
+                        ${isDisabled
+                          ? 'bg-zinc-200 dark:bg-zinc-950 border-zinc-300 dark:border-zinc-900 text-zinc-500 dark:text-zinc-600 cursor-not-allowed'
+                          : isSelected
+                            ? 'bg-primary-600/20 border-primary-500/40 text-primary-600 dark:text-primary-300'
+                            : 'bg-zinc-100 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:border-zinc-300 dark:hover:border-zinc-700'}`}
+                    >
+                      {s.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-zinc-500 mt-2">
+                Additional subjects are recognized once per day in analytics.
+              </p>
             </div>
           </div>
 
@@ -175,11 +227,7 @@ export const SubjectManager: React.FC<Props> = ({ log, refreshLog, onClose }) =>
             Confirm Protocol
           </button>
         </div>
-      </div>
-    </div>
+    </Model>
   );
 };
 
-const BookIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
-);

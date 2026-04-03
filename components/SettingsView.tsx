@@ -5,7 +5,7 @@ import {
   getScheduleTemplate, saveScheduleTemplate,
   getCustomSubjects,
   getAppSettings, saveAppSettings,
-  initializeToday, saveLog, getHistory
+  initializeToday, saveLog, getHistory, getTodayDateString, getStoredLog, isBlockScheduledForDay
 } from '../services/storageService';
 import { EditBlockModal } from './EditBlockModal';
 import {
@@ -25,9 +25,10 @@ import { AboutTab } from './settings/AboutTab';
 interface Props {
   onClose: () => void;
   refreshApp: () => void;
+  refreshLog: () => void;
 }
 
-export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
+export const SettingsView: React.FC<Props> = ({ onClose, refreshApp, refreshLog }) => {
   const [activeTab, setActiveTab] = useState<'APPEARANCE' | 'STRATEGY' | 'SCHEDULE' | 'SUBJECTS' | 'DATA' | 'ABOUT'>('APPEARANCE');
 
   // Data States
@@ -38,6 +39,7 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
 
   // UI States
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+  const editingBlock = editingBlockId ? template.find(b => b.id === editingBlockId) : null;
 
   // Strategy Recommendations
   const [recommendations, setRecommendations] = useState<{ subject: Subject, count: number, score: number }[]>([]);
@@ -58,12 +60,23 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
     subjects.forEach(s => counts[s.id] = 0);
 
     history.forEach(day => {
-      if (day.selectedSubjects.main1) counts[day.selectedSubjects.main1] = (counts[day.selectedSubjects.main1] || 0) + 1;
-      if (day.selectedSubjects.main2) counts[day.selectedSubjects.main2] = (counts[day.selectedSubjects.main2] || 0) + 1;
-      if (day.selectedSubjects.light) counts[day.selectedSubjects.light] = (counts[day.selectedSubjects.light] || 0) + 0.5;
+      const uniqueIds = Array.from(new Set([
+        day.selectedSubjects.main1,
+        day.selectedSubjects.main2,
+        day.selectedSubjects.light,
+        ...(day.additionalSubjects || []),
+      ].filter(Boolean) as string[]));
+      uniqueIds.forEach(id => {
+        counts[id] = (counts[id] || 0) + 1;
+      });
     });
 
-    const currentSelection = [dayLog.selectedSubjects.main1, dayLog.selectedSubjects.main2, dayLog.selectedSubjects.light];
+    const currentSelection = Array.from(new Set([
+      dayLog.selectedSubjects.main1,
+      dayLog.selectedSubjects.main2,
+      dayLog.selectedSubjects.light,
+      ...(dayLog.additionalSubjects || []),
+    ].filter(Boolean) as string[]));
 
     const ranked = subjects
       .filter(s => !currentSelection.includes(s.id))
@@ -88,6 +101,42 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
     newTemplate.sort((a, b) => a.startTime.localeCompare(b.startTime));
     setTemplate(newTemplate);
     saveScheduleTemplate(newTemplate);
+
+    // Keep today's live timeline in sync with template edits.
+    const todayStr = getTodayDateString();
+    const logs = getStoredLog();
+    const todayLog = logs[todayStr] || initializeToday();
+    const [y, m, d] = todayStr.split('-').map(Number);
+    const dayOfWeek = new Date(y, m - 1, d).getDay();
+
+    const updatedTemplateBlock = newTemplate.find(b => b.id === id);
+    const shouldBeInToday = !!(updatedTemplateBlock && isBlockScheduledForDay(updatedTemplateBlock, dayOfWeek, todayStr));
+    const existsInToday = todayLog.schedule.some(block => block.id === id);
+
+    let changed = false;
+    let nextSchedule = [...todayLog.schedule];
+
+    if (existsInToday && shouldBeInToday) {
+      nextSchedule = nextSchedule.map((block) => {
+        if (block.id !== id) return block;
+        changed = true;
+        return { ...block, ...updates };
+      });
+    } else if (existsInToday && !shouldBeInToday) {
+      nextSchedule = nextSchedule.filter(block => block.id !== id);
+      changed = true;
+    } else if (!existsInToday && shouldBeInToday && updatedTemplateBlock) {
+      nextSchedule = [...nextSchedule, { ...updatedTemplateBlock, isCompleted: false }];
+      changed = true;
+    }
+
+    if (changed) {
+      nextSchedule.sort((a, b) => a.startTime.localeCompare(b.startTime));
+      const newLog = { ...todayLog, schedule: nextSchedule };
+      saveLog(todayStr, newLog);
+      setDayLog(newLog);
+      refreshLog();
+    }
   };
 
   const handleStrategySelect = (slot: 'main1' | 'main2' | 'light', subjectId: string) => {
@@ -100,9 +149,9 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl animate-in slide-in-from-right duration-300 overflow-y-auto">
-      {editingBlockId && (
+      {editingBlock && (
         <EditBlockModal
-          block={template.find(b => b.id === editingBlockId)!}
+          block={editingBlock}
           onSave={handleSaveTemplateBlock}
           onClose={() => setEditingBlockId(null)}
         />
@@ -110,7 +159,7 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
 
       <div className="max-w-md mx-auto min-h-full p-6 pb-24">
         <header className="flex items-center gap-4 mb-8">
-          <button onClick={() => { haptic.light(); onClose(); }} className="p-2 bg-zinc-100 dark:bg-zinc-900 rounded-full text-zinc-500 hover:text-black dark:hover:text-white transition-colors active-scale">
+          <button title="Close Settings" onClick={() => { haptic.light(); onClose(); }} className="p-2 bg-zinc-100 dark:bg-zinc-900 rounded-full text-zinc-500 hover:text-black dark:hover:text-white transition-colors active-scale">
             <ArrowLeft size={20} />
           </button>
           <div>
@@ -155,7 +204,7 @@ export const SettingsView: React.FC<Props> = ({ onClose, refreshApp }) => {
         )}
         {activeTab === 'SUBJECTS' && <SubjectsTab subjects={subjects} setSubjects={setSubjects} />}
         {activeTab === 'SCHEDULE' && <ScheduleTab template={template} setEditingBlockId={setEditingBlockId} />}
-        {activeTab === 'DATA' && <DataTab />}
+        {activeTab === 'DATA' && <DataTab settings={settings} handleSaveSettings={handleSaveSettings} />}
         {activeTab === 'ABOUT' && <AboutTab />}
       </div>
     </div>

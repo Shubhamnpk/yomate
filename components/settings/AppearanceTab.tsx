@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { User, Moon, Monitor, Sun, Zap, Coffee, GraduationCap } from 'lucide-react';
-import { AppSettings, AppMode } from '../../types';
+import { User, Moon, Monitor, Sun, Zap, Coffee, GraduationCap, CalendarDays, Clock3 } from 'lucide-react';
+import { AppSettings, AppMode, TimeFormat } from '../../types';
 import { haptic } from '../../services/hapticService';
 
 interface Props {
@@ -13,10 +13,13 @@ export const AppearanceTab: React.FC<Props> = ({ settings, handleSaveSettings })
     const ThemeOption = ({ color, label, selected, onClick }: any) => (
         <button
             onClick={onClick}
-            className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${selected ? 'border-zinc-400 bg-zinc-800' : 'border-transparent hover:bg-zinc-800/50'}`}
+            className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all active-scale
+                ${selected
+                    ? 'border-primary-500 bg-primary-500/10 shadow-sm'
+                    : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
         >
             <div className={`w-8 h-8 rounded-full ${color}`}></div>
-            <span className="text-[10px] font-bold uppercase text-zinc-400">{label}</span>
+            <span className={`text-[10px] font-bold uppercase ${selected ? 'text-primary-600 dark:text-primary-400' : 'text-zinc-600 dark:text-zinc-400'}`}>{label}</span>
         </button>
     );
 
@@ -94,6 +97,56 @@ export const AppearanceTab: React.FC<Props> = ({ settings, handleSaveSettings })
                             <mode.icon size={20} className="mb-1" />
                             <span className="text-xs font-bold">{mode.label}</span>
                             <span className="text-[9px] opacity-60 uppercase">{mode.desc}</span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="space-y-4">
+                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Date System</h3>
+                <div className="grid grid-cols-2 gap-3">
+                    {[
+                        { id: 'ENGLISH', label: 'English', desc: 'Gregorian' },
+                        { id: 'NEPALI', label: 'Nepali', desc: 'Bikram Sambat' },
+                    ].map((system) => (
+                        <button
+                            key={system.id}
+                            onClick={() => { haptic.light(); handleSaveSettings({ ...settings, dateSystem: system.id as AppSettings['dateSystem'] }); }}
+                            className={`flex items-center justify-between p-3 rounded-xl border transition-all active-scale
+                ${settings.dateSystem === system.id
+                                    ? 'bg-primary-500/10 border-primary-500 text-primary-600 dark:text-primary-400 font-bold'
+                                    : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
+                        >
+                            <div className="text-left">
+                                <p className="text-xs font-bold">{system.label}</p>
+                                <p className="text-[10px] opacity-70 uppercase">{system.desc}</p>
+                            </div>
+                            <CalendarDays size={16} />
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="space-y-4">
+                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Time Format</h3>
+                <div className="grid grid-cols-2 gap-3">
+                    {[
+                        { id: '12H', label: '12 Hour', desc: '2:30 PM' },
+                        { id: '24H', label: '24 Hour', desc: '14:30' },
+                    ].map((format) => (
+                        <button
+                            key={format.id}
+                            onClick={() => { haptic.light(); handleSaveSettings({ ...settings, timeFormat: format.id as TimeFormat }); }}
+                            className={`flex items-center justify-between p-3 rounded-xl border transition-all active-scale
+                ${settings.timeFormat === format.id
+                                    ? 'bg-primary-500/10 border-primary-500 text-primary-600 dark:text-primary-400 font-bold'
+                                    : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
+                        >
+                            <div className="text-left">
+                                <p className="text-xs font-bold">{format.label}</p>
+                                <p className="text-[10px] opacity-70 uppercase">{format.desc}</p>
+                            </div>
+                            <Clock3 size={16} />
                         </button>
                     ))}
                 </div>

@@ -1,16 +1,31 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { getHistory, getCustomSubjects, getAppSettings } from '../services/storageService';
-import { Subject, AppSettings } from '../types';
-import { BarChart3, AlertTriangle, CheckCircle, GraduationCap, Flag, Milestone, AlertOctagon, Sparkles } from 'lucide-react';
+import { Subject, AppSettings, DayLog } from '../types';
+import { BarChart3, AlertTriangle, GraduationCap, Flag, Milestone, AlertOctagon, CalendarDays, Trophy } from 'lucide-react';
 import { WeeklyReport } from './WeeklyReport';
+import { formatDateBySystem, formatDateTimeBySystem, getYearInfoBySystem } from '../services/dateDisplay';
+import { getProductivityEntries } from '../services/productivityService';
 
-export const StatsView: React.FC = () => {
+export const StatsView: React.FC = React.memo(() => {
+  const ACCENT_HEX: Record<AppSettings['themeAccent'], string> = {
+    indigo: '#6366f1',
+    emerald: '#10b981',
+    rose: '#f43f5e',
+    violet: '#8b5cf6',
+    orange: '#f97316',
+  };
   // Use 14 days for coverage stat to be meaningful
   const history = useMemo(() => getHistory(14), []);
+  const rolling90History = useMemo(() => getHistory(90), []);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [settings, setSettings] = useState<AppSettings>(getAppSettings());
   const [showReport, setShowReport] = useState(false);
+  const yearHistory = useMemo(() => getHistory(365), []);
+  const [heatmapView, setHeatmapView] = useState<'90D' | 'YEAR'>('90D');
+  const [heatmapType, setHeatmapType] = useState<'PRODUCTIVITY' | 'FOCUS' | 'SUBJECTS'>('PRODUCTIVITY');
+  const accentHex = ACCENT_HEX[settings.themeAccent] || ACCENT_HEX.indigo;
+  const productivityEntries = useMemo(() => getProductivityEntries(), []);
 
   useEffect(() => {
     setSubjects(getCustomSubjects());
@@ -25,10 +40,16 @@ export const StatsView: React.FC = () => {
     subjects.forEach(s => counts[s.id] = 0);
 
     history.forEach(log => {
-      const { main1, main2, light } = log.selectedSubjects;
-      if (main1) { counts[main1] = (counts[main1] || 0) + 1; touchedSubjects.add(main1); }
-      if (main2) { counts[main2] = (counts[main2] || 0) + 1; touchedSubjects.add(main2); }
-      if (light) { counts[light] = (counts[light] || 0) + 0.5; touchedSubjects.add(light); }
+      const uniqueIds = Array.from(new Set([
+        log.selectedSubjects.main1,
+        log.selectedSubjects.main2,
+        log.selectedSubjects.light,
+        ...(log.additionalSubjects || []),
+      ].filter(Boolean) as string[]));
+      uniqueIds.forEach(id => {
+        counts[id] = (counts[id] || 0) + 1;
+        touchedSubjects.add(id);
+      });
     });
 
     return {
@@ -41,43 +62,237 @@ export const StatsView: React.FC = () => {
   // ... existing calculation ...
   const deepWorkTotal = last7Days.reduce((acc, curr) => acc + curr.deepWorkMinutes, 0);
   const totalViolations = last7Days.reduce((acc, curr) => acc + curr.phoneViolations, 0);
-
   // Filter deadlines for future only
   const upcomingDeadlines = (settings.deadlines || [])
     .filter(d => new Date(d.date).getTime() > (new Date().getTime() - 86400000))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const aiInsight = useMemo(() => {
-    // ... keep existing aiInsight logic ...
-    if (history.length < 3) return {
-      message: "I'm still learning your patterns. Keep focusing to unlock deep insights.",
-      type: 'neutral'
+
+  const heatmapData = useMemo(() => {
+    const getSubjectCountForDay = (log: Pick<DayLog, 'selectedSubjects' | 'subjectMinutes' | 'additionalSubjects'>) => {
+      const touched = new Set<string>();
+      const { main1, main2, light } = log.selectedSubjects;
+      if (main1) touched.add(main1);
+      if (main2) touched.add(main2);
+      if (light) touched.add(light);
+      (log.additionalSubjects || []).forEach(id => touched.add(id));
+      Object.entries((log.subjectMinutes || {}) as Record<string, number>).forEach(([id, mins]) => {
+        if ((mins || 0) > 0) touched.add(id);
+      });
+      return touched.size;
     };
 
-    const recent = history.slice(-3);
-    const avgMins = recent.reduce((acc, curr) => acc + curr.deepWorkMinutes, 0) / 3;
-    const avgViolations = recent.reduce((acc, curr) => acc + curr.phoneViolations, 0) / 3;
+    const entryByDate = productivityEntries.reduce<Record<string, number>>((acc, entry) => {
+      acc[entry.date] = entry.totalScore;
+      return acc;
+    }, {});
 
-    if (avgViolations > 2) return {
-      message: "Focus leak detected. You're negotiating with your devices. Try leaving your phone in another room for the next session.",
-      type: 'warning'
+    const getProductivityDay = (date: string) => {
+      const score = entryByDate[date] ?? -5;
+      return { score, missed: !(date in entryByDate) };
     };
 
-    if (avgMins > 120) return {
-      message: "Elite performance. You've entered the top 1% of focus intensity. Remember to rest your eyes between sessions.",
-      type: 'success'
+    const getProductivityFill = (score: number) => Math.max(0, Math.min(1, (score + 5) / 10));
+    const getProductivityColor = (score: number) => {
+      const normalized = getProductivityFill(score);
+      const saturation = 75;
+      const lightness = 45;
+      return `hsl(${normalized * 120} ${saturation}% ${lightness}%)`;
+    };
+    const getProductivityLabel = (score: number, missed: boolean) => {
+      if (missed) return 'Missed entry';
+      if (score <= -2) return 'Hard day';
+      if (score < 2) return 'Neutral day';
+      return 'Strong day';
     };
 
-    if (avgMins < 30 && subjectStats.coverage < 50) return {
-      message: "Shallow work threat. You're skimming the surface. Pick ONE subject tomorrow and commit to 60 minutes of depth.",
-      type: 'info'
+    const getFocusFill = (minutes: number) => {
+      if (minutes <= 0) return 0.2;
+      if (minutes < 30) return 0.42;
+      if (minutes < 60) return 0.58;
+      if (minutes < 120) return 0.78;
+      return 1;
     };
+    const getFocusColor = (minutes: number) => {
+      if (minutes <= 0) return '#334155';
+      if (minutes < 30) return '#0f766e';
+      if (minutes < 60) return '#0891b2';
+      if (minutes < 120) return '#2563eb';
+      return '#4338ca';
+    };
+    const getFocusLabel = (minutes: number) => {
+      if (minutes <= 0) return 'No focus';
+      if (minutes < 45) return 'Light focus';
+      if (minutes < 120) return 'Focused day';
+      return 'Deep focus day';
+    };
+
+    const getSubjectFill = (count: number) => {
+      if (count <= 0) return 0.2;
+      if (count === 1) return 0.42;
+      if (count === 2) return 0.62;
+      if (count === 3) return 0.82;
+      return 1;
+    };
+    const getSubjectColor = (count: number) => {
+      if (count <= 0) return '#3f3f46';
+      if (count === 1) return '#b45309';
+      if (count === 2) return '#ea580c';
+      if (count === 3) return '#dc2626';
+      return '#be123c';
+    };
+    const getSubjectLabel = (count: number) => {
+      if (count <= 0) return 'No subjects';
+      if (count === 1) return 'Single subject';
+      if (count <= 3) return 'Balanced day';
+      return 'Wide coverage day';
+    };
+
+    const getMetricForLog = (log: DayLog) => {
+      if (heatmapType === 'FOCUS') return log.deepWorkMinutes || 0;
+      if (heatmapType === 'SUBJECTS') return getSubjectCountForDay(log);
+      return getProductivityDay(log.date).score;
+    };
+
+    const getFill = (value: number) => {
+      if (heatmapType === 'FOCUS') return getFocusFill(value);
+      if (heatmapType === 'SUBJECTS') return getSubjectFill(value);
+      return getProductivityFill(value);
+    };
+
+    const getColor = (value: number) => {
+      if (heatmapType === 'FOCUS') return getFocusColor(value);
+      if (heatmapType === 'SUBJECTS') return getSubjectColor(value);
+      return getProductivityColor(value);
+    };
+
+    const getTooltip = (date: string, value: number, missed = false) => {
+      const dateLabel = formatDateBySystem(date, settings.dateSystem, { year: 'numeric', month: 'short', day: 'numeric' });
+      if (heatmapType === 'FOCUS') {
+        return `${dateLabel} • ${getFocusLabel(value)} • ${value}m`;
+      }
+      if (heatmapType === 'SUBJECTS') {
+        return `${dateLabel} • ${getSubjectLabel(value)} • ${value} subjects`;
+      }
+      return `${dateLabel} • ${getProductivityLabel(value, missed)} • ${value.toFixed(2)}`;
+    };
+
+    const ninetyDays = rolling90History.map((day) => ({
+      date: day.date,
+      value: getMetricForLog(day),
+      missed: heatmapType === 'PRODUCTIVITY' ? getProductivityDay(day.date).missed : false,
+    }));
+    const weeks90: typeof ninetyDays[] = [];
+    for (let i = 0; i < ninetyDays.length; i += 7) {
+      weeks90.push(ninetyDays.slice(i, i + 7));
+    }
+    const loggedDays90 = ninetyDays.filter((day) => heatmapType === 'PRODUCTIVITY' ? day.value > -5 : day.value > 0).length;
+    const average90 = Number((ninetyDays.reduce((sum, day) => sum + day.value, 0) / Math.max(ninetyDays.length, 1)).toFixed(heatmapType === 'PRODUCTIVITY' ? 2 : 1));
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yearInfo = getYearInfoBySystem(settings.dateSystem, now);
+    const yearStart = yearInfo.start;
+    const yearEnd = yearInfo.end;
+    const totalYearDays = Math.floor((yearEnd.getTime() - yearStart.getTime()) / 86400000) + 1;
+    const yearDays: Array<{ date: string; value: number; missed: boolean; isFuture: boolean; isToday: boolean }> = [];
+
+    for (let d = new Date(yearStart); d <= yearEnd; d.setDate(d.getDate() + 1)) {
+      const dStr = d.toISOString().split('T')[0];
+      const dayDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const isFuture = dayDate > today;
+      const isToday = dayDate.getTime() === today.getTime();
+      const matchingLog = yearHistory.find((log) => log.date === dStr);
+      const productivityDay = getProductivityDay(dStr);
+      yearDays.push({
+        date: dStr,
+        value: isFuture
+          ? (heatmapType === 'PRODUCTIVITY' ? -5 : 0)
+          : heatmapType === 'PRODUCTIVITY'
+            ? productivityDay.score
+            : matchingLog
+              ? getMetricForLog(matchingLog)
+              : 0,
+        missed: !isFuture && heatmapType === 'PRODUCTIVITY' ? productivityDay.missed : false,
+        isFuture,
+        isToday,
+      });
+    }
+
+    const yearColumns: typeof yearDays[] = [];
+    for (let i = 0; i < yearDays.length; i += 8) {
+      yearColumns.push(yearDays.slice(i, i + 8));
+    }
+
+    const elapsedDays = yearDays.filter(d => !d.isFuture).length;
+    const completedElapsedDays = yearDays.filter(d => !d.isFuture && (heatmapType === 'PRODUCTIVITY' ? d.value > -5 : d.value > 0)).length;
+    const yearCompletionPct = elapsedDays > 0 ? Math.round((completedElapsedDays / elapsedDays) * 100) : 0;
+    const yearGonePct = Math.round((elapsedDays / totalYearDays) * 100);
 
     return {
-      message: "Steady momentum. You're building the habit of depth. Try a 'River' soundscape for your next session to stay in flow.",
-      type: 'neutral'
+      weeks90,
+      loggedDays90,
+      average90,
+      yearColumns,
+      elapsedDays,
+      completedElapsedDays,
+      yearCompletionPct,
+      yearGonePct,
+      totalYearDays,
+      yearLabel: yearInfo.label,
+      getFill,
+      getColor,
+      getTooltip,
     };
-  }, [history, subjectStats.coverage]);
+  }, [rolling90History, productivityEntries, settings.dateSystem, heatmapType, yearHistory, subjects.length]);
+
+  const achievementMeta: Record<string, string> = {
+    FIRST_100_MIN_DAY: 'First 100 minutes in a day',
+    STREAK_7: '7-day deep work streak',
+    PRODUCTIVITY_STREAK_7: '7-day productivity streak',
+    NO_PHONE_3_DAYS: 'Zero phone violations for 3 days',
+    RITUALS_WEEK: 'All rituals completed for 7 days',
+  };
+  const todayAchievements = useMemo(() => {
+    const today = getHistory(1)[0];
+    return (today?.unlockedAchievements || []).map(id => ({ id, label: achievementMeta[id] || id }));
+  }, []);
+  const scoreSessionQuality = (session: NonNullable<DayLog['focusSessions']>[number]) => {
+    const sessionDate = session.startAt.split('T')[0];
+    const day = yearHistory.find(d => d.date === sessionDate);
+    const durationScore = Math.min(60, Math.round((session.durationMinutes / 60) * 60));
+    const violationPenalty = Math.min(30, (session.phoneViolationsDuringSession || 0) * 10);
+    const focusBlocks = (day?.schedule || []).filter(b => b.mode === 'Deep Work' || b.mode === 'Study');
+    const completionRatio = focusBlocks.length > 0
+      ? (focusBlocks.filter(b => b.isCompleted).length / focusBlocks.length)
+      : (session.durationMinutes >= 30 ? 1 : 0.5);
+    const completionScore = Math.round(completionRatio * 40);
+    return Math.max(0, Math.min(100, durationScore + completionScore - violationPenalty));
+  };
+  const sessionInsights = useMemo(() => {
+    const sessions = yearHistory
+      .flatMap(d => d.focusSessions || [])
+      .sort((a, b) => new Date(b.endAt).getTime() - new Date(a.endAt).getTime());
+
+    const hourBuckets: Record<number, { totalMins: number; count: number }> = {};
+    sessions.forEach(s => {
+      const hour = new Date(s.startAt).getHours();
+      hourBuckets[hour] = hourBuckets[hour] || { totalMins: 0, count: 0 };
+      hourBuckets[hour].totalMins += s.durationMinutes;
+      hourBuckets[hour].count += 1;
+    });
+
+    const bestHour = Object.entries(hourBuckets).sort(([, a], [, b]) => (b.totalMins / b.count) - (a.totalMins / a.count))[0];
+    const qualityScores = sessions.map(s => scoreSessionQuality(s));
+    const avgQuality = qualityScores.length > 0
+      ? Math.round(qualityScores.reduce((sum, val) => sum + val, 0) / qualityScores.length)
+      : 0;
+    return {
+      sessions,
+      bestHour: bestHour ? Number(bestHour[0]) : null,
+      avgQuality,
+    };
+  }, [yearHistory]);
 
   return (
     <div className="p-5 pb-32 animate-in fade-in duration-500 space-y-6">
@@ -99,20 +314,20 @@ export const StatsView: React.FC = () => {
       {/* Hero Stats */}
       <div className="grid grid-cols-2 gap-3">
         {/* Coverage Card */}
-        <div className="col-span-2 bg-gradient-to-r from-zinc-800 to-zinc-900 border border-zinc-700 p-5 rounded-2xl flex items-center justify-between shadow-lg">
+        <div className="col-span-2 bg-gradient-to-r from-zinc-100 to-white dark:from-zinc-800 dark:to-zinc-900 border border-zinc-200 dark:border-zinc-700 p-5 rounded-2xl flex items-center justify-between shadow-lg">
           <div>
-            <div className="flex items-center gap-2 text-emerald-400 mb-2">
+            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-2">
               <GraduationCap size={16} />
               <span className="text-xs font-bold uppercase tracking-wider">Exam Readiness</span>
             </div>
-            <p className="text-3xl font-mono font-bold text-white">{subjectStats.coverage}%</p>
-            <p className="text-xs text-zinc-400 mt-1">Subjects studied (14 Days)</p>
+            <p className="text-3xl font-mono font-bold text-zinc-900 dark:text-white">{subjectStats.coverage}%</p>
+            <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">Subjects studied (14 Days)</p>
           </div>
 
           {/* Mini Pie Visual */}
-          <div className="w-16 h-16 rounded-full border-4 border-zinc-800 relative flex items-center justify-center">
+          <div className="w-16 h-16 rounded-full border-4 border-zinc-200 dark:border-zinc-800 relative flex items-center justify-center">
             <div className="absolute inset-0 rounded-full border-4 border-emerald-500" style={{ clipPath: `inset(0 ${100 - subjectStats.coverage}% 0 0)` }}></div>
-            <span className="text-xs font-bold text-zinc-400">{subjects.length}</span>
+            <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400">{subjects.length}</span>
           </div>
         </div>
 
@@ -133,32 +348,15 @@ export const StatsView: React.FC = () => {
           <p className="text-2xl font-mono font-bold text-zinc-900 dark:text-white">{totalViolations}</p>
           <p className="text-[10px] text-zinc-500 mt-1">Violations (7d)</p>
         </div>
-      </div>
 
-      {/* AI Coach Insight */}
-      <div className={`p-5 rounded-[2rem] border animate-in slide-in-from-top-2 duration-700 shadow-sm
-        ${aiInsight.type === 'warning' ? 'bg-rose-500/10 border-rose-500/20 text-rose-300' :
-          aiInsight.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' :
-            aiInsight.type === 'info' ? 'bg-blue-500/10 border-blue-500/20 text-blue-300' :
-              'bg-primary-500/10 border-primary-500/20 text-primary-300'}
-      `}>
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-8 h-8 rounded-full bg-black/40 flex items-center justify-center">
-            <Sparkles size={16} />
-          </div>
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em]">AI Mentor Insights</span>
-        </div>
-        <p className="text-sm font-medium leading-relaxed italic opacity-90">
-          "{aiInsight.message}"
-        </p>
       </div>
 
       {/* Upcoming Deadlines Widget */}
       {upcomingDeadlines.length > 0 && (
         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
-          <h3 className="text-sm font-bold text-zinc-400 mb-4 uppercase tracking-wider flex items-center gap-2">
-            <Flag size={14} /> Upcoming Horizon
-          </h3>
+        <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 mb-4 uppercase tracking-wider flex items-center gap-2">
+          <Flag size={14} /> Upcoming Horizon
+        </h3>
           <div className="space-y-3">
             {upcomingDeadlines.slice(0, 3).map(deadline => {
               const daysLeft = Math.ceil((new Date(deadline.date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
@@ -172,7 +370,7 @@ export const StatsView: React.FC = () => {
                     </div>
                     <div>
                       <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{deadline.title}</p>
-                      <p className="text-[10px] text-zinc-500">{new Date(deadline.date).toLocaleDateString()}</p>
+                      <p className="text-[10px] text-zinc-500">{formatDateBySystem(deadline.date, settings.dateSystem)}</p>
                     </div>
                   </div>
                   <span className={`text-sm font-mono font-bold ${urgencyColor}`}>{daysLeft}d</span>
@@ -183,31 +381,231 @@ export const StatsView: React.FC = () => {
         </div>
       )}
 
-      <div className="bg-zinc-100 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
-        <h3 className="text-sm font-bold text-zinc-400 mb-6 uppercase tracking-wider">Consistency (7 Days)</h3>
-        <div className="flex items-end justify-between h-32 gap-2">
-          {last7Days.map((log, idx) => {
-            const height = Math.min((log.deepWorkMinutes / 120) * 100, 100);
-            const dayLabel = new Date(log.date).toLocaleDateString('en-US', { weekday: 'narrow' });
-            const isToday = idx === last7Days.length - 1;
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+            <CalendarDays size={14} /> Heatmaps
+          </h3>
+          <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1">
+            <button
+              onClick={() => setHeatmapView('90D')}
+              className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded ${heatmapView === '90D' ? 'bg-primary-500 text-white' : 'text-zinc-500'}`}
+            >
+              90 Days
+            </button>
+            <button
+              onClick={() => setHeatmapView('YEAR')}
+              className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded ${heatmapView === 'YEAR' ? 'bg-primary-500 text-white' : 'text-zinc-500'}`}
+            >
+              Year
+            </button>
+          </div>
+        </div>
 
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 mb-3">
+          {[
+            { id: 'PRODUCTIVITY', label: 'Productivity' },
+            { id: 'FOCUS', label: 'Focus' },
+            { id: 'SUBJECTS', label: 'Subjects' },
+          ].map((item) => {
+            const active = heatmapType === item.id;
             return (
-              <div key={log.date} className="flex-1 flex flex-col items-center gap-2 group">
-                <div className="relative w-full bg-zinc-200 dark:bg-zinc-900 rounded-t-lg overflow-hidden h-full flex items-end">
-                  <div
-                    style={{ height: `${height}%` }}
-                    className={`w-full transition-all duration-1000 ${isToday ? 'bg-primary-500' : 'bg-zinc-400 dark:bg-zinc-700 group-hover:bg-zinc-500 dark:group-hover:bg-zinc-600'}`}
-                  ></div>
-                </div>
-                <span className={`text-[10px] font-mono ${isToday ? 'text-zinc-900 dark:text-white font-bold' : 'text-zinc-500 dark:text-zinc-600'}`}>{dayLabel}</span>
-              </div>
+              <button
+                key={item.id}
+                onClick={() => setHeatmapType(item.id as 'PRODUCTIVITY' | 'FOCUS' | 'SUBJECTS')}
+                className={`shrink-0 flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-bold transition-colors ${
+                  active
+                    ? 'bg-primary-500/12 border-primary-500/30 text-primary-700 dark:text-primary-300'
+                    : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500'
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${active ? 'bg-primary-500' : 'bg-zinc-400'}`}></span>
+                {item.label}
+              </button>
             );
           })}
         </div>
+
+        <div className="flex items-end justify-between mb-2">
+          {heatmapView === '90D' ? (
+            <>
+              <div>
+                <p className="text-lg font-mono font-bold text-zinc-900 dark:text-white">{heatmapData.average90}</p>
+                <p className="text-[10px] text-zinc-500">
+                  {heatmapType === 'PRODUCTIVITY'
+                    ? 'Avg productivity score across 90 days'
+                    : heatmapType === 'FOCUS'
+                      ? 'Avg focus minutes across 90 days'
+                      : 'Avg subjects touched across 90 days'}
+                </p>
+              </div>
+              <p className="text-[10px] text-zinc-500">
+                {heatmapData.loggedDays90}/90 {heatmapType === 'PRODUCTIVITY' ? 'journaled days' : heatmapType === 'FOCUS' ? 'focus-active days' : 'subject-active days'}
+              </p>
+            </>
+          ) : (
+            <>
+              <div>
+                <p className="text-lg font-mono font-bold text-zinc-900 dark:text-white">{heatmapData.yearCompletionPct}%</p>
+                <p className="text-[10px] text-zinc-500">
+                  {heatmapType === 'PRODUCTIVITY'
+                    ? `Productivity check-in coverage in ${heatmapData.yearLabel}`
+                    : heatmapType === 'FOCUS'
+                      ? `Focus-active coverage in ${heatmapData.yearLabel}`
+                      : `Subject coverage in ${heatmapData.yearLabel}`}
+                </p>
+              </div>
+              <p className="text-[10px] text-zinc-500">
+                {heatmapData.completedElapsedDays}/{heatmapData.elapsedDays} active days • Year gone: {heatmapData.yearGonePct}%
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="w-full overflow-hidden">
+          <div className="w-full">
+            {heatmapView === '90D' &&
+              <div
+                className="grid gap-0.5 w-full"
+                style={{ gridTemplateColumns: `repeat(${heatmapData.weeks90.length}, minmax(0, 1fr))` }}
+              >
+                {heatmapData.weeks90.map((week, weekIdx) => (
+                  <div key={`w90-${weekIdx}`} className="grid grid-rows-7 gap-0.5 h-24">
+                    {Array.from({ length: 7 }).map((_, rowIdx) => {
+                      const day = week[rowIdx];
+                      if (!day) return <div key={`w90-empty-${weekIdx}-${rowIdx}`} className="w-full h-full rounded-[2px] bg-transparent" />;
+                      return (
+                        <div
+                          key={day.date}
+                          title={heatmapData.getTooltip(day.date, day.value, day.missed)}
+                          className="w-full h-full rounded-[2px] transition-colors"
+                          style={{ backgroundColor: heatmapData.getColor(day.value), opacity: Math.max(0.4, heatmapData.getFill(day.value)) }}
+                        />
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>}
+            {heatmapView === 'YEAR' &&
+              <div
+                className="grid gap-px w-full"
+                style={{ gridTemplateColumns: `repeat(${heatmapData.yearColumns.length}, minmax(0, 1fr))` }}
+              >
+                {heatmapData.yearColumns.map((col, colIdx) => (
+                  <div key={`wy-${colIdx}`} className="grid grid-rows-8 gap-px">
+                    {Array.from({ length: 8 }).map((_, rowIdx) => {
+                      const day = col[rowIdx];
+                      if (!day) return <div key={`wy-empty-${colIdx}-${rowIdx}`} className="aspect-square rounded-full bg-transparent" />;
+                      return (
+                        <div
+                          key={day.date}
+                          title={heatmapData.getTooltip(day.date, day.value, day.missed)}
+                          className={`aspect-square rounded-full transition-colors ${day.isFuture ? 'bg-zinc-100 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700' : ''}`}
+                          style={
+                            day.isFuture
+                              ? undefined
+                              : {
+                                  backgroundColor: heatmapData.getColor(day.value),
+                                  opacity: Math.max(0.4, heatmapData.getFill(day.value)),
+                                }
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>}
+          </div>
+        </div>
+
+        {heatmapView === '90D' ? (
+          <div className="flex items-center justify-between mt-4 text-[10px] text-zinc-500">
+            <span>{heatmapType === 'PRODUCTIVITY' ? '-5' : heatmapType === 'FOCUS' ? '0m' : '0'}</span>
+            <div className="flex items-center gap-1">
+              {(heatmapType === 'PRODUCTIVITY'
+                ? [-5, -2.5, 0, 2.5, 5]
+                : heatmapType === 'FOCUS'
+                  ? [0, 30, 60, 120, 180]
+                  : [0, 1, 2, 3, 4]
+              ).map((value) => (
+                <div
+                  key={value}
+                  className="w-2.5 h-2.5 rounded-sm"
+                  style={{ backgroundColor: heatmapData.getColor(value), opacity: Math.max(0.4, heatmapData.getFill(value)) }}
+                ></div>
+              ))}
+            </div>
+            <span>{heatmapType === 'PRODUCTIVITY' ? '+5' : heatmapType === 'FOCUS' ? '180m+' : '4+'}</span>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between mt-4 text-[10px] text-zinc-500">
+            <span>{heatmapType === 'PRODUCTIVITY' ? '-5' : heatmapType === 'FOCUS' ? '0m' : '0'}</span>
+            <div className="flex items-center gap-1">
+              {(heatmapType === 'PRODUCTIVITY'
+                ? [-5, 0, 5]
+                : heatmapType === 'FOCUS'
+                  ? [0, 90, 180]
+                  : [0, 2, 4]
+              ).map((value) => (
+                <div
+                  key={value}
+                  className="w-2.5 h-2.5 rounded-full"
+                  style={{ backgroundColor: heatmapData.getColor(value), opacity: Math.max(0.4, heatmapData.getFill(value)) }}
+                ></div>
+              ))}
+            </div>
+            <span>{heatmapType === 'PRODUCTIVITY' ? '+5' : heatmapType === 'FOCUS' ? '180m+' : '4+'}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
+        <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 mb-4 uppercase tracking-wider flex items-center gap-2">
+          <Trophy size={14} /> Milestones
+        </h3>
+        {todayAchievements.length === 0 ? (
+          <p className="text-sm text-zinc-500">No achievements unlocked yet. Keep stacking focused sessions.</p>
+        ) : (
+          <div className="space-y-2">
+            {todayAchievements.map(ach => (
+              <div key={ach.id} className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-3">
+                <Trophy size={14} className="text-emerald-400" />
+                <span className="text-sm text-zinc-800 dark:text-zinc-200">{ach.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5">
+        <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 mb-4 uppercase tracking-wider">Session History</h3>
+        {sessionInsights.bestHour !== null && (
+          <p className="text-xs text-zinc-500 mb-3">
+            Best focus hour: <span className="text-zinc-900 dark:text-white font-semibold">{sessionInsights.bestHour}:00</span>
+          </p>
+        )}
+        {sessionInsights.sessions.length === 0 ? (
+          <p className="text-sm text-zinc-500">No sessions recorded yet.</p>
+        ) : (
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-1 no-scrollbar">
+            {sessionInsights.sessions.slice(0, 8).map(s => (
+              <div key={s.id} className="p-3 rounded-xl bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-zinc-900 dark:text-white">{s.taskName}</p>
+                  <p className="text-[10px] text-zinc-500">{formatDateTimeBySystem(s.startAt, settings.dateSystem)} · {s.mode} · {s.noiseType}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-mono text-zinc-900 dark:text-white">{s.durationMinutes}m</p>
+                  <p className="text-[10px] text-zinc-500">quality: {scoreSessionQuality(s)} | violations: {s.phoneViolationsDuringSession}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="space-y-4">
-        <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider">Subject Heatmap (14 Days)</h3>
+        <h3 className="text-sm font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Subject Heatmap (14 Days)</h3>
         <div className="space-y-2">
           {subjectStats.sorted.map(([id, count]) => {
             const subject = subjects.find(s => s.id === id);
@@ -236,4 +634,4 @@ export const StatsView: React.FC = () => {
       </div>
     </div>
   );
-};
+});
