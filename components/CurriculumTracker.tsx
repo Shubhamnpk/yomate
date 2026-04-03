@@ -14,9 +14,11 @@ import { haptic } from '../services/hapticService';
 import {
   CurriculumProgramId,
   CurriculumProgressMap,
+  getAppSettings,
   getCurriculumProgress,
   saveCurriculumProgress,
 } from '../services/storageService';
+import { formatDateTimeBySystem } from '../services/dateDisplay';
 
 type ProgramConfig = {
   id: CurriculumProgramId;
@@ -84,6 +86,7 @@ const cloneProgress = (progress: CurriculumProgressMap): CurriculumProgressMap =
 const dedupe = (items: string[]) => Array.from(new Set(items));
 
 export const CurriculumTracker: React.FC = () => {
+  const dateSystem = getAppSettings().dateSystem || 'ENGLISH';
   const [selectedProgramId, setSelectedProgramId] = useState<CurriculumProgramId>('pharmacy-year-2');
   const [progressMap, setProgressMap] = useState<CurriculumProgressMap>(() => cloneProgress(getCurriculumProgress()));
   const [search, setSearch] = useState('');
@@ -266,7 +269,13 @@ export const CurriculumTracker: React.FC = () => {
   };
 
   const updatedText = selectedProgress.updatedAt
-    ? new Date(selectedProgress.updatedAt).toLocaleString()
+    ? formatDateTimeBySystem(selectedProgress.updatedAt, dateSystem, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
     : 'Not updated yet';
 
   return (

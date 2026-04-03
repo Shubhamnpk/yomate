@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { initializeToday, getStoredLog, getAppSettings, resetApp, saveLog, saveAppSettings } from './services/storageService';
+import { initializeToday, getStoredLog, getAppSettings, getTodayDateString, resetApp, saveLog, saveAppSettings } from './services/storageService';
 import { DayLog, ViewState, AppSettings } from './types';
 import { getCurrentTime24 } from './services/timeService';
 import { initializeAudio, playAscensionSound } from './services/audioGen';
@@ -131,7 +131,7 @@ const DebugConsole: React.FC<{
 
   // Helper to inject stats
   const modifyLog = (updates: Partial<DayLog>) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayDateString();
     const log = getStoredLog()[today] || initializeToday();
     saveLog(today, { ...log, ...updates });
     onRefresh();
@@ -238,7 +238,11 @@ const DebugConsole: React.FC<{
           <label className="text-[9px] font-bold text-zinc-500 uppercase block mb-2 tracking-wider">State Injection</label>
           <div className="space-y-2">
             <button
-              onClick={() => modifyLog({ deepWorkMinutes: 65, schedule: getStoredLog()[new Date().toISOString().split('T')[0]].schedule.map(s => s.mode === 'Deep Work' ? { ...s, isCompleted: true } : s) })}
+              onClick={() => {
+                const today = getTodayDateString();
+                const todayLog = getStoredLog()[today] || initializeToday();
+                modifyLog({ deepWorkMinutes: 65, schedule: todayLog.schedule.map(s => s.mode === 'Deep Work' ? { ...s, isCompleted: true } : s) });
+              }}
               className="w-full py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded text-[10px] font-bold flex items-center justify-center gap-2 hover:bg-emerald-500/20"
             >
               <Zap size={12} /> Add 1hr Deep Work
@@ -250,7 +254,10 @@ const DebugConsole: React.FC<{
                 for (let i = 1; i <= 5; i++) {
                   const d = new Date(today);
                   d.setDate(today.getDate() - i);
-                  const dStr = d.toISOString().split('T')[0];
+                  const year = d.getFullYear();
+                  const month = String(d.getMonth() + 1).padStart(2, '0');
+                  const day = String(d.getDate()).padStart(2, '0');
+                  const dStr = `${year}-${month}-${day}`;
                   saveLog(dStr, { ...initializeToday(true), date: dStr, deepWorkMinutes: 60 });
                 }
                 onRefresh();
@@ -298,11 +305,6 @@ const App: React.FC = () => {
   const [scheduledEnd, setScheduledEnd] = useState<string | null>(null);
   const [initialFocusDuration, setInitialFocusDuration] = useState<number | null>(null);
 
-  // Swipe Navigation State
-  const touchStart = useRef<number | null>(null);
-  const touchEnd = useRef<number | null>(null);
-  const swipeBlocked = useRef(false);
-
   // Time State (Lifted for Debugging)
   const [realTime, setRealTime] = useState(getCurrentTime24());
   const [overrideTime, setOverrideTime] = useState<string | null>(null);
@@ -313,73 +315,6 @@ const App: React.FC = () => {
 
   const effectiveTime = overrideTime || realTime;
   const primaryRgb = ACCENT_COLORS[settings.themeAccent] || ACCENT_COLORS['indigo'];
-
-  const isSwipeBlockedContext = (target: EventTarget | null) => {
-    if (!(target instanceof HTMLElement)) return false;
-
-    // Don't start swipe navigation on controls/dropdowns/editable elements.
-    if (target.closest('input, textarea, select, option, button, a, [contenteditable="true"], [role="button"], [data-no-swipe="true"]')) {
-      return true;
-    }
-
-    // Disable swipe nav while full-screen modal/overlay is active.
-    if (document.querySelector('.fixed.inset-0.z-50, .fixed.inset-0.z-\\[50\\], .fixed.inset-0.z-\\[100\\]')) {
-      return true;
-    }
-
-    return false;
-  };
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    swipeBlocked.current = isSwipeBlockedContext(e.target);
-    if (swipeBlocked.current) {
-      touchStart.current = null;
-      touchEnd.current = null;
-      return;
-    }
-    touchStart.current = e.targetTouches[0].clientX;
-    touchEnd.current = e.targetTouches[0].clientX;
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (swipeBlocked.current) return;
-    const currentX = e.targetTouches[0].clientX;
-    touchEnd.current = currentX;
-  };
-
-  const handleTouchEnd = () => {
-    if (swipeBlocked.current) {
-      swipeBlocked.current = false;
-      return;
-    }
-
-    if (touchStart.current === null || touchEnd.current === null) {
-      return;
-    }
-    const distance = touchStart.current - touchEnd.current;
-    const isLeftSwipe = distance > 70;
-    const isRightSwipe = distance < -70;
-
-    if (isLeftSwipe || isRightSwipe) {
-      const currentIndex = VIEW_ORDER.indexOf(currentView);
-      let nextIndex = currentIndex;
-
-      if (isLeftSwipe && currentIndex < VIEW_ORDER.length - 1) {
-        nextIndex = currentIndex + 1;
-      } else if (isRightSwipe && currentIndex > 0) {
-        nextIndex = currentIndex - 1;
-      }
-
-      if (nextIndex !== currentIndex) {
-        haptic.light();
-        setView(VIEW_ORDER[nextIndex]);
-      }
-    }
-
-    touchStart.current = null;
-    touchEnd.current = null;
-    swipeBlocked.current = false;
-  };
 
   const isTypingElement = (target: EventTarget | null) => {
     if (!(target instanceof HTMLElement)) return false;
@@ -584,7 +519,7 @@ const App: React.FC = () => {
   }, [effectiveTime, dayLog, settings.rituals]);
 
   const refreshLog = useCallback(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getTodayDateString();
     const logs = getStoredLog();
     if (logs[todayStr]) {
       setDayLog(logs[todayStr]);
@@ -592,6 +527,15 @@ const App: React.FC = () => {
       setDayLog(initializeToday());
     }
   }, []);
+
+  useEffect(() => {
+    if (!dayLog) return;
+    const todayStr = getTodayDateString();
+    if (dayLog.date !== todayStr) {
+      setDayLog(initializeToday());
+      lastCheckedEffectiveRef.current = null;
+    }
+  }, [realTime, dayLog]);
 
   const refreshApp = useCallback(() => {
     setSettings(getAppSettings());
@@ -640,9 +584,6 @@ const App: React.FC = () => {
     <div
       className={`h-[100dvh] w-full ${themeBg} text-zinc-900 dark:text-zinc-200 font-sans selection:bg-primary-500/30 overflow-hidden flex flex-col relative transition-colors duration-700`}
       style={{ '--primary': primaryRgb, '--primary-rgb': primaryRgb } as React.CSSProperties}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
     >
       {/* Background Decorative Layer — GPU-optimized: reduced blur radius, will-change hints, removed external network request */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-40" style={{ contain: 'strict' }}>

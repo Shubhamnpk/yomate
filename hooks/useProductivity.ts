@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ProductivityEntry } from '../types';
 import {
   getLatestProductivitySubmission,
-  getProductivityCurrentStreak,
+  getProductivityStreakEndingAt,
   getProductivityEntries,
   isProductivityCooldownActive,
   normalizeProductivityEntry,
@@ -43,15 +43,17 @@ export const useProductivity = () => {
   const exportEntries = useCallback(() => JSON.stringify(entries, null, 2), [entries]);
   const sortedRecent = useMemo(() => [...entries].sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`)), [entries]);
   const lastEntry = sortedRecent[0] || null;
+  const latestSubmission = getLatestProductivitySubmission(entries);
+  const streak = latestSubmission ? getProductivityStreakEndingAt(latestSubmission.date, entries) : 0;
 
   return {
     entries: sortedRecent,
     recentEntries: sortedRecent.slice(0, 7).reverse(),
     lastScore: lastEntry?.totalScore ?? null,
     lastScoreDate: lastEntry?.date ?? null,
-    streak: getProductivityCurrentStreak(entries),
+    streak,
     isCooldownActive: isProductivityCooldownActive(entries),
-    latestSubmission: getLatestProductivitySubmission(entries),
+    latestSubmission,
     addEntry,
     deleteEntry,
     importEntries,

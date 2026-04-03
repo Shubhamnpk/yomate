@@ -12,6 +12,9 @@ const SETTINGS_KEY = 'youmeet_settings_v1';
 const CURRICULUM_PROGRESS_KEY = 'youmeet_curriculum_progress_v1';
 const LOG_SAVE_DEBOUNCE_MS = 250;
 
+export type BackupSection = 'logs' | 'template' | 'subjects' | 'curriculumProgress' | 'settings' | 'productivityEntries';
+export const ALL_BACKUP_SECTIONS: BackupSection[] = ['logs', 'template', 'subjects', 'curriculumProgress', 'settings', 'productivityEntries'];
+
 export type CurriculumProgramId = 'pharmacy-year-2' | 'pharmacy-year-3' | 'class-11-science';
 
 export interface CurriculumProgramProgress {
@@ -108,6 +111,13 @@ export const isBlockScheduledForDay = (block: ScheduleBlock, dayOfWeek: number, 
   return !block.daysOfWeek || block.daysOfWeek.includes(dayOfWeek);
 };
 
+const toLocalDateKey = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export const flushPendingLogSave = () => {
   if (logSaveTimer) {
     window.clearTimeout(logSaveTimer);
@@ -116,21 +126,26 @@ export const flushPendingLogSave = () => {
 };
 
 export const getTodayDateString = (): string => {
-  return new Date().toISOString().split('T')[0];
+  return toLocalDateKey(new Date());
 };
 
 const getDateDaysAgo = (dateStr: string, daysAgo: number): string => {
   const [year, month, day] = dateStr.split('-').map(Number);
   const d = new Date(year, month - 1, day);
   d.setDate(d.getDate() - daysAgo);
-  return d.toISOString().split('T')[0];
+  return toLocalDateKey(d);
+};
+
+const parseDateKeyLocal = (dateStr: string): Date => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
 };
 
 const calculateStreakEndingAt = (logs: Record<string, DayLog>, dateStr: string): number => {
   let streak = 0;
-  const date = new Date(dateStr);
+  const date = parseDateKeyLocal(dateStr);
   while (true) {
-    const dStr = date.toISOString().split('T')[0];
+    const dStr = toLocalDateKey(date);
     if (logs[dStr] && logs[dStr].deepWorkMinutes > 15) {
       streak++;
       date.setDate(date.getDate() - 1);
@@ -335,6 +350,16 @@ export const getBackupPayload = () => {
   };
 };
 
+export const getBackupPayloadBySections = (sections: BackupSection[]) => {
+  const fullPayload = getBackupPayload();
+  const selected = new Set(sections.length > 0 ? sections : ALL_BACKUP_SECTIONS);
+  const payload: Record<string, unknown> = { version: fullPayload.version };
+  ALL_BACKUP_SECTIONS.forEach((section) => {
+    if (selected.has(section)) payload[section] = fullPayload[section];
+  });
+  return payload;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 const validateBackupPayload = (data: unknown) => {
@@ -369,6 +394,19 @@ const applyBackupPayload = (data: Record<string, unknown>) => {
   if (data.productivityEntries) localStorage.setItem(PRODUCTIVITY_STORAGE_KEY, JSON.stringify(data.productivityEntries));
 };
 
+const clearBackupSections = (sections: BackupSection[]) => {
+  const selected = new Set(sections.length > 0 ? sections : ALL_BACKUP_SECTIONS);
+  if (selected.has('logs')) {
+    logCache = {};
+    localStorage.removeItem(STORAGE_KEY);
+  }
+  if (selected.has('template')) localStorage.removeItem(TEMPLATE_KEY);
+  if (selected.has('subjects')) localStorage.removeItem(SUBJECTS_KEY);
+  if (selected.has('curriculumProgress')) localStorage.removeItem(CURRICULUM_PROGRESS_KEY);
+  if (selected.has('settings')) localStorage.removeItem(SETTINGS_KEY);
+  if (selected.has('productivityEntries')) localStorage.removeItem(PRODUCTIVITY_STORAGE_KEY);
+};
+
 export const exportData = () => {
   const data = getBackupPayload();
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -376,6 +414,19 @@ export const exportData = () => {
   const a = document.createElement('a');
   a.href = url;
   a.download = `youmeet_backup_${getTodayDateString()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+export const exportDataBySections = (sections: BackupSection[]) => {
+  const selected = sections.length > 0 ? sections : ALL_BACKUP_SECTIONS;
+  const data = getBackupPayloadBySections(selected);
+  const suffix = selected.length === ALL_BACKUP_SECTIONS.length ? 'full' : selected.join('-');
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `youmeet_backup_${suffix}_${getTodayDateString()}.json`;
   a.click();
   URL.revokeObjectURL(url);
 };
@@ -388,6 +439,23 @@ export const importData = (jsonString: string) => {
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Invalid backup file.';
     alert(message);
+  }
+};
+
+export const importDataBySections = (jsonString: string, sections: BackupSection[]) => {
+  try {
+    const selected = sections.length > 0 ? sections : ALL_BACKUP_SECTIONS;
+    const data = validateBackupPayload(JSON.parse(jsonString));
+    const filteredPayload: Record<string, unknown> = {};
+    selected.forEach((section) => {
+      if (section in data) filteredPayload[section] = data[section];
+    });
+    clearBackupSections(selected);
+    applyBackupPayload(filteredPayload);
+    window.location.reload();
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Invalid backup file.';
+    throw new Error(message);
   }
 };
 
@@ -672,7 +740,7 @@ export const getHistory = (days: number): DayLog[] => {
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = toLocalDateKey(d);
     if (logs[dateStr]) {
       result.push(logs[dateStr]);
     } else {
@@ -687,7 +755,7 @@ export const getStreak = (): number => {
   const logs = getStoredLog();
   const todayStr = getTodayDateString();
   let streak = 0;
-  let date = new Date(todayStr); // Start from today
+  let date = parseDateKeyLocal(todayStr); // Start from today
 
   // If today has meaningful work, count it, otherwise start checking from yesterday
   if (logs[todayStr] && logs[todayStr].deepWorkMinutes > 15) {
@@ -698,7 +766,7 @@ export const getStreak = (): number => {
   date.setDate(date.getDate() - 1);
 
   while (true) {
-    const dStr = date.toISOString().split('T')[0];
+    const dStr = toLocalDateKey(date);
     if (logs[dStr] && logs[dStr].deepWorkMinutes > 15) {
       streak++;
       date.setDate(date.getDate() - 1);
@@ -715,7 +783,7 @@ export const getYesterdayLog = (): DayLog | null => {
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
-  const dateStr = yesterday.toISOString().split('T')[0];
+  const dateStr = toLocalDateKey(yesterday);
   return logs[dateStr] || null;
 };
 
@@ -967,7 +1035,7 @@ export const shiftScheduleForward = (blockId: string) => {
 export const saveTomorrowObjective = (objective: string) => {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const dateStr = tomorrow.toISOString().split('T')[0];
+  const dateStr = toLocalDateKey(tomorrow);
 
   const logs = getStoredLog();
   const tomorrowLog = logs[dateStr] || initializeTodayForDate(dateStr);
@@ -980,7 +1048,7 @@ export const saveTomorrowObjective = (objective: string) => {
 const initializeTodayForDate = (date: string): DayLog => {
   const template = getScheduleTemplate();
   const settings = getAppSettings();
-  const dayOfWeek = new Date(date).getDay();
+  const dayOfWeek = parseDateKeyLocal(date).getDay();
   const todaysPlan = settings.weeklyPlan[dayOfWeek] || { main1: null, main2: null, light: null };
   const todaysSchedule = template
     .filter((b) => isBlockScheduledForDay(b, dayOfWeek, date))

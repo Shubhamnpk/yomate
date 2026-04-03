@@ -5,6 +5,8 @@ import { AppSettings, Subject, DayLog, Deadline } from '../../types';
 import { haptic } from '../../services/hapticService';
 import { formatDateBySystem } from '../../services/dateDisplay';
 import { getAppSettings, getHistory, importIcsCalendar } from '../../services/storageService';
+import moonPhaseCalendarText from '../../data/calendar/moonphase2026.ics?raw';
+import nepaliHolidayCalendarText from '../../data/calendar/nepali-hoilday2026.ics?raw';
 
 interface Props {
     settings: AppSettings;
@@ -16,6 +18,21 @@ interface Props {
 }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+const BUNDLED_CALENDARS = [
+    {
+        id: 'nepal-holidays',
+        title: 'Nepal Holidays',
+        description: 'Public holidays and observances from the bundled Nepal calendar feed.',
+        text: nepaliHolidayCalendarText,
+    },
+    {
+        id: 'moon-phases',
+        title: 'Moon Phases',
+        description: 'Primary moon phases from the bundled lunar calendar feed.',
+        text: moonPhaseCalendarText,
+    },
+] as const;
 
 export const StrategyTab: React.FC<Props> = ({
     settings,
@@ -228,6 +245,19 @@ export const StrategyTab: React.FC<Props> = ({
         }
     };
 
+    const handleBundledCalendarImport = (calendarText: string, label: string) => {
+        try {
+            const result = importIcsCalendar(calendarText);
+            handleSaveSettings(getAppSettings());
+            setIcsImportNotice(`Imported ${result.importedEvents} classes/events and ${result.importedDeadlines} deadlines from ${label}.`);
+            setShowIcsFallback(false);
+            haptic.success();
+        } catch {
+            setIcsImportNotice(`Failed to import bundled calendar: ${label}.`);
+            haptic.error();
+        }
+    };
+
     const toggleSection = (key: keyof typeof openSections) => {
         setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
     };
@@ -330,6 +360,35 @@ export const StrategyTab: React.FC<Props> = ({
                                 </button>
                             </div>
                         )}
+                        <div className="mt-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/40 p-4">
+                            <div className="flex items-start gap-3">
+                                <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-600 dark:text-emerald-300">
+                                    <CalendarDays size={16} />
+                                </div>
+                                <div className="flex-1">
+                                    <p className="text-sm font-bold text-zinc-900 dark:text-white">Bundled Data</p>
+                                    <p className="text-[11px] text-zinc-500 mt-1">Import preloaded calendars from this project without downloading anything first.</p>
+                                </div>
+                            </div>
+                            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {BUNDLED_CALENDARS.map((calendar) => (
+                                    <button
+                                        key={calendar.id}
+                                        type="button"
+                                        onClick={() => handleBundledCalendarImport(calendar.text, calendar.title)}
+                                        className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-4 text-left hover:bg-emerald-500/10 transition-colors"
+                                    >
+                                        <div className="flex items-center justify-between gap-3">
+                                            <span className="text-sm font-bold text-zinc-900 dark:text-white">{calendar.title}</span>
+                                            <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-300">
+                                                Data
+                                            </span>
+                                        </div>
+                                        <p className="mt-2 text-[11px] text-zinc-500">{calendar.description}</p>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                         <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                             <span className="rounded-full bg-white dark:bg-zinc-900 px-2.5 py-1 border border-zinc-200 dark:border-zinc-800">Google Calendar export</span>
                             <span className="rounded-full bg-white dark:bg-zinc-900 px-2.5 py-1 border border-zinc-200 dark:border-zinc-800">Apple Calendar</span>

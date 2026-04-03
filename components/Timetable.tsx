@@ -915,9 +915,8 @@ export const Timetable: React.FC<Props> = React.memo(({ log, refreshLog, refresh
                             {modeLabel}
                           </span>
                           {isCalendarEvent && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-300">
+                            <span className="inline-flex items-center text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-300" title="Fixed">
                               <Lock size={10} />
-                              Fixed
                             </span>
                           )}
                           {active && (
