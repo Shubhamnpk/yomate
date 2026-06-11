@@ -10,12 +10,13 @@ const TEMPLATE_KEY = 'youmeet_template_v1';
 const SUBJECTS_KEY = 'youmeet_subjects_v1';
 const SETTINGS_KEY = 'youmeet_settings_v1';
 const CURRICULUM_PROGRESS_KEY = 'youmeet_curriculum_progress_v1';
+export const CURRICULUM_PROGRESS_UPDATED_EVENT = 'curriculum-progress-updated';
 const LOG_SAVE_DEBOUNCE_MS = 250;
 
 export type BackupSection = 'logs' | 'template' | 'subjects' | 'curriculumProgress' | 'settings' | 'productivityEntries';
 export const ALL_BACKUP_SECTIONS: BackupSection[] = ['logs', 'template', 'subjects', 'curriculumProgress', 'settings', 'productivityEntries'];
 
-export type CurriculumProgramId = 'pharmacy-year-2' | 'pharmacy-year-3' | 'class-11-science';
+export type CurriculumProgramId = 'pharmacy-year-2' | 'pharmacy-year-3' | 'class-11-science' | 'class-12-science';
 
 export interface CurriculumProgramProgress {
   readUnitIds: string[];
@@ -29,12 +30,14 @@ const DEFAULT_CURRICULUM_PROGRESS: CurriculumProgressMap = {
   'pharmacy-year-2': { readUnitIds: [], completedSubUnitIds: [], updatedAt: null },
   'pharmacy-year-3': { readUnitIds: [], completedSubUnitIds: [], updatedAt: null },
   'class-11-science': { readUnitIds: [], completedSubUnitIds: [], updatedAt: null },
+  'class-12-science': { readUnitIds: [], completedSubUnitIds: [], updatedAt: null },
 };
 
 const createDefaultCurriculumProgress = (): CurriculumProgressMap => ({
   'pharmacy-year-2': { ...DEFAULT_CURRICULUM_PROGRESS['pharmacy-year-2'], readUnitIds: [], completedSubUnitIds: [] },
   'pharmacy-year-3': { ...DEFAULT_CURRICULUM_PROGRESS['pharmacy-year-3'], readUnitIds: [], completedSubUnitIds: [] },
   'class-11-science': { ...DEFAULT_CURRICULUM_PROGRESS['class-11-science'], readUnitIds: [], completedSubUnitIds: [] },
+  'class-12-science': { ...DEFAULT_CURRICULUM_PROGRESS['class-12-science'], readUnitIds: [], completedSubUnitIds: [] },
 });
 
 let logCache: Record<string, DayLog> | null = null;
@@ -326,6 +329,7 @@ export const getCurriculumProgress = (): CurriculumProgressMap => {
       'pharmacy-year-2': normalize('pharmacy-year-2'),
       'pharmacy-year-3': normalize('pharmacy-year-3'),
       'class-11-science': normalize('class-11-science'),
+      'class-12-science': normalize('class-12-science'),
     };
   } catch {
     return createDefaultCurriculumProgress();
@@ -334,6 +338,7 @@ export const getCurriculumProgress = (): CurriculumProgressMap => {
 
 export const saveCurriculumProgress = (progress: CurriculumProgressMap) => {
   localStorage.setItem(CURRICULUM_PROGRESS_KEY, JSON.stringify(progress));
+  window.dispatchEvent(new CustomEvent(CURRICULUM_PROGRESS_UPDATED_EVENT));
 };
 
 // --- DATA MANAGEMENT (Import/Export/Reset) ---

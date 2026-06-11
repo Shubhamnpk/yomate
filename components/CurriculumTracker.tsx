@@ -9,7 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import { class11ScienceData, secondYearData, thirdYearData, YearData } from '../data/curriculum';
+import { class11ScienceData, class12ScienceData, secondYearData, thirdYearData, YearData } from '../data/curriculum';
 import { haptic } from '../services/hapticService';
 import {
   CurriculumProgramId,
@@ -56,6 +56,14 @@ const PROGRAMS: ProgramConfig[] = [
     icon: BookOpen,
     data: class11ScienceData,
   },
+  {
+    id: 'class-12-science',
+    title: 'Class 12 Science',
+    shortTitle: 'Class 12',
+    subtitle: 'NEB Curriculum',
+    icon: BookOpen,
+    data: class12ScienceData,
+  },
 ];
 
 const FILTERS: { id: SubjectFilter; label: string }[] = [
@@ -64,6 +72,21 @@ const FILTERS: { id: SubjectFilter; label: string }[] = [
   { id: 'IN_PROGRESS', label: 'In Progress' },
   { id: 'COMPLETED', label: 'Completed' },
 ];
+
+const isProgramComplete = (program: ProgramConfig, progress: CurriculumProgressMap[CurriculumProgramId]): boolean => {
+  const allSubUnitIds = program.data.subjects.flatMap((subject) =>
+    subject.units.flatMap((unit) => unit.subUnits.map((subUnit) => subUnit.id))
+  );
+  if (allSubUnitIds.length > 0) {
+    const completedSubUnitSet = new Set(progress.completedSubUnitIds);
+    return allSubUnitIds.every((subUnitId) => completedSubUnitSet.has(subUnitId));
+  }
+
+  const allUnitIds = program.data.subjects.flatMap((subject) => subject.units.map((unit) => unit.id));
+  if (allUnitIds.length === 0) return false;
+  const readUnitSet = new Set(progress.readUnitIds);
+  return allUnitIds.every((unitId) => readUnitSet.has(unitId));
+};
 
 const cloneProgress = (progress: CurriculumProgressMap): CurriculumProgressMap => ({
   'pharmacy-year-2': {
@@ -80,6 +103,11 @@ const cloneProgress = (progress: CurriculumProgressMap): CurriculumProgressMap =
     ...progress['class-11-science'],
     readUnitIds: [...progress['class-11-science'].readUnitIds],
     completedSubUnitIds: [...progress['class-11-science'].completedSubUnitIds],
+  },
+  'class-12-science': {
+    ...progress['class-12-science'],
+    readUnitIds: [...progress['class-12-science'].readUnitIds],
+    completedSubUnitIds: [...progress['class-12-science'].completedSubUnitIds],
   },
 });
 
@@ -290,16 +318,22 @@ export const CurriculumTracker: React.FC = () => {
       <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
         {PROGRAMS.map((program) => {
           const selected = selectedProgram.id === program.id;
+          const complete = isProgramComplete(program, progressMap[program.id]);
           return (
             <button
               key={program.id}
               onClick={() => selectProgram(program.id)}
-              className={`min-w-[88px] rounded-xl px-2.5 py-1.5 border text-center transition-all shrink-0 ${selected
-                ? 'bg-primary-600 text-white border-primary-500'
-                : 'bg-white dark:bg-zinc-900/70 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-600'
+              className={`min-w-[88px] rounded-xl px-2.5 py-1.5 border text-center transition-all shrink-0 ${complete
+                ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm shadow-emerald-500/20'
+                : selected
+                  ? 'bg-primary-600 text-white border-primary-500'
+                  : 'bg-white dark:bg-zinc-900/70 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-600'
                 }`}
             >
-              <p className="font-bold text-xs leading-none">{program.shortTitle}</p>
+              <p className="font-bold text-xs leading-none flex items-center justify-center gap-1">
+                {complete && <CheckCircle2 size={12} />}
+                <span>{program.shortTitle}</span>
+              </p>
             </button>
           );
         })}
